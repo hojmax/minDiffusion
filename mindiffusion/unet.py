@@ -43,7 +43,6 @@ class UnetDown(nn.Module):
         self.model = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-
         return self.model(x)
 
 
@@ -79,51 +78,57 @@ class TimeSiren(nn.Module):
 
 
 class NaiveUnet(nn.Module):
-    def __init__(self, in_channels: int, out_channels: int, n_feat: int = 256) -> None:
+    def __init__(
+        self, in_channels: int, out_channels: int, u_channels: int = 256
+    ) -> None:
         super(NaiveUnet, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
 
-        self.n_feat = n_feat
+        self.base_channels = u_channels
 
-        self.init_conv = Conv3(in_channels, n_feat, is_res=True)
+        self.init_conv = Conv3(in_channels, u_channels, is_res=True)
 
-        self.down1 = UnetDown(n_feat, n_feat)
-        self.down2 = UnetDown(n_feat, 2 * n_feat)
-        self.down3 = UnetDown(2 * n_feat, 2 * n_feat)
+        self.down1 = UnetDown(u_channels, u_channels)
+        self.down2 = UnetDown(u_channels, 2 * u_channels)
 
         self.to_vec = nn.Sequential(nn.AvgPool2d(4), nn.ReLU())
 
-        self.timeembed = TimeSiren(2 * n_feat)
+        self.timeembed = TimeSiren(2 * u_channels)
 
         self.up0 = nn.Sequential(
-            nn.ConvTranspose2d(2 * n_feat, 2 * n_feat, 4, 4),
-            nn.GroupNorm(8, 2 * n_feat),
+            nn.ConvTranspose2d(2 * u_channels, 2 * u_channels, 7, 7),
+            nn.GroupNorm(8, 2 * u_channels),
             nn.ReLU(),
         )
 
-        self.up1 = UnetUp(4 * n_feat, 2 * n_feat)
-        self.up2 = UnetUp(4 * n_feat, n_feat)
-        self.up3 = UnetUp(2 * n_feat, n_feat)
-        self.out = nn.Conv2d(2 * n_feat, self.out_channels, 3, 1, 1)
+        self.up1 = UnetUp(4 * u_channels, u_channels)
+        self.up2 = UnetUp(2 * u_channels, u_channels)
+        self.out = nn.Conv2d(2 * u_channels, self.out_channels, 3, 1, 1)
 
     def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-
         x = self.init_conv(x)
-
+        print("x", x.shape)
         down1 = self.down1(x)
+        print("down1", down1.shape)
         down2 = self.down2(down1)
-        down3 = self.down3(down2)
+        print("down2", down2.shape)
 
-        thro = self.to_vec(down3)
-        temb = self.timeembed(t).view(-1, self.n_feat * 2, 1, 1)
+        thro = self.to_vec(down2)
+        print("thro1", thro.shape)
+        temb = self.timeembed(t).view(-1, self.base_channels * 2, 1, 1)
+        print("temb", temb.shape)
 
         thro = self.up0(thro + temb)
+        print("thro2", thro.shape)
 
-        up1 = self.up1(thro, down3) + temb
-        up2 = self.up2(up1, down2)
-        up3 = self.up3(up2, down1)
+        print("inner", self.up1(thro, down2).shape)
+        up1 = self.up1(thro, down2) + temb
+        print("up1", up1.shape)
+        up2 = self.up2(up1, down1)
+        print("up2", up2.shape)
 
-        out = self.out(torch.cat((up3, x), 1))
+        out = self.out(torch.cat((up2, x), 1))
+        print("out", out.shape)
 
         return out

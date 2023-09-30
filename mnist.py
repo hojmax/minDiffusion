@@ -18,6 +18,8 @@ from torch.utils.data import DataLoader
 from torchvision.datasets import MNIST
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
+from mindiffusion.unet import NaiveUnet
+import matplotlib.pyplot as plt
 
 
 def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
@@ -54,30 +56,6 @@ blk = lambda ic, oc: nn.Sequential(
     nn.BatchNorm2d(oc),
     nn.LeakyReLU(),
 )
-
-
-class DummyEpsModel(nn.Module):
-    """
-    This should be unet-like, but let's don't think about the model too much :P
-    Basically, any universal R^n -> R^n model should work.
-    """
-
-    def __init__(self, n_channel: int) -> None:
-        super(DummyEpsModel, self).__init__()
-        self.conv = nn.Sequential(  # with batchnorm
-            blk(n_channel, 64),
-            blk(64, 128),
-            blk(128, 256),
-            blk(256, 512),
-            blk(512, 256),
-            blk(256, 128),
-            blk(128, 64),
-            nn.Conv2d(64, n_channel, 3, padding=1),
-        )
-
-    def forward(self, x, t) -> torch.Tensor:
-        # Lets think about using t later. In the paper, they used Tr-like positional embeddings.
-        return self.conv(x)
 
 
 class DDPM(nn.Module):
@@ -118,7 +96,6 @@ class DDPM(nn.Module):
         return self.criterion(eps, self.eps_model(x_t, _ts / self.n_T))
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
-
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
 
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
@@ -134,9 +111,8 @@ class DDPM(nn.Module):
 
 
 def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
-
-    ddpm = DDPM(eps_model=DummyEpsModel(1), betas=(1e-4, 0.02), n_T=1000)
-    ddpm.to(device)
+    ddpm = DDPM(eps_model=NaiveUnet(1, 1, u_channels=128), betas=(1e-4, 0.02), n_T=1000)
+    ddpm  # .to(device)
 
     tf = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
@@ -148,7 +124,12 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         download=True,
         transform=tf,
     )
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
+    # print(dataset[0][0].shape)
+    # plt.imshow(dataset[0][0].squeeze().numpy())
+    # plt.show()
+
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=20)
+
     optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
 
     for i in range(n_epoch):
@@ -158,7 +139,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         loss_ema = None
         for x, _ in pbar:
             optim.zero_grad()
-            x = x.to(device)
+            x = x  # .to(device)
             loss = ddpm(x)
             loss.backward()
             if loss_ema is None:
