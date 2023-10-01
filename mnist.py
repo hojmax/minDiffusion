@@ -153,17 +153,17 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         with torch.no_grad():
             xh = ddpm.sample(16, (1, 28, 28), device)
             grid = make_grid(xh, nrow=4)
-            save_image(grid, f"./contents/ddpm_sample_{i}.png")
+            save_image(grid, f"images/ddpm_sample_{i}.png")
 
             # save model
-            torch.save(ddpm.state_dict(), f"./ddpm_mnist.pth")
+            torch.save(ddpm.state_dict(), f"models/ddpm_mnist.pth")
 
         wandb.log(
             {
                 "epoch": i + 1,
                 "loss": avg_loss,
                 "global_steps": global_steps,
-                f"sample": wandb.Image(f"./contents/ddpm_sample_{i}.png"),
+                f"sample": wandb.Image(f"images/ddpm_sample_{i}.png"),
             }
         )
 
