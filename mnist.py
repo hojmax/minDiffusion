@@ -21,6 +21,7 @@ from torchvision.utils import save_image, make_grid
 from mindiffusion.unet import NaiveUnet
 import matplotlib.pyplot as plt
 import wandb
+import os
 
 
 def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
@@ -107,8 +108,11 @@ class DDPM(nn.Module):
 def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     wandb.login()
     wandb.init(project="atia-project", config={}, tags=["mnist"])
-    ddpm = DDPM(eps_model=NaiveUnet(1, n_feat=64), betas=(1e-4, 0.02), n_T=1000)
+    ddpm = DDPM(eps_model=NaiveUnet(1, n_feat=128), betas=(1e-4, 0.02), n_T=100)
     ddpm.to(device)
+
+    os.makedirs("images", exist_ok=True)
+    os.makedirs("models", exist_ok=True)
 
     tf = transforms.Compose(
         [
@@ -128,11 +132,11 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     # plt.imshow(dataset[0][0].squeeze().numpy())
     # plt.show()
 
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=20)
+    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
 
     optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
-    global_steps = 0
     xh = ddpm.sample(1, (1, 28, 28), device)
+    global_steps = 0
 
     for i in range(n_epoch):
         ddpm.train()
@@ -151,8 +155,8 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         avg_loss = total_loss / len(dataloader)
         ddpm.eval()
         with torch.no_grad():
-            xh = ddpm.sample(16, (1, 28, 28), device)
-            grid = make_grid(xh, nrow=4)
+            xh = ddpm.sample(4, (1, 28, 28), device)
+            grid = make_grid(xh, nrow=2)
             save_image(grid, f"images/ddpm_sample_{i}.png")
 
             # save model
