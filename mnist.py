@@ -132,7 +132,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
 
     optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
     global_steps = 0
-    xh = ddpm.sample(16, (1, 28, 28), device)
+    xh = ddpm.sample(1, (1, 28, 28), device)
 
     for i in range(n_epoch):
         ddpm.train()
