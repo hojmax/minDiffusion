@@ -43,7 +43,6 @@ class DDPM(nn.Module):
         return self.criterion(eps, self.eps_model(x_t, _ts / self.n_T))
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
-
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
 
         # This samples accordingly to Algorithm 2. It is exactly the same logic.

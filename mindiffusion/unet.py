@@ -86,7 +86,8 @@ class NaiveUnet(nn.Module):
         self.down1 = UnetDown(n_feat, n_feat)
         self.down2 = UnetDown(n_feat, 2 * n_feat)
 
-        self.timeembed = Embedding(2 * n_feat)
+        self.timeembed1 = Embedding(2 * n_feat)
+        self.timeembed2 = Embedding(n_feat)
 
         self.mid_block = nn.Sequential(
             nn.Conv2d(2 * n_feat, 2 * n_feat, kernel_size=3, padding=1),
@@ -113,11 +114,12 @@ class NaiveUnet(nn.Module):
         # print("down2", down2.shape)
         mid = self.mid_block(down2)
         # print("mid", mid.shape)
-        time_embed = self.timeembed(t)
+        time_embed = self.timeembed1(t).view(-1, 2 * self.n_feat, 1, 1)
+        time_embed2 = self.timeembed2(t).view(-1, self.n_feat, 1, 1)
         # print("time_embed", time_embed.shape)
-        mid = mid + time_embed.view(-1, 2 * self.n_feat, 1, 1)
+        mid = mid + time_embed
         # print("mid2", mid.shape)
-        up1 = self.up1(mid, down2)
+        up1 = self.up1(mid, down2) + time_embed2
         # print("up1", up1.shape)
         up2 = self.up2(up1, down1)
         # print("up2", up2.shape)
