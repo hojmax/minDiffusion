@@ -108,7 +108,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     wandb.login()
     wandb.init(project="atia-project", config={}, tags=["mnist"])
     ddpm = DDPM(eps_model=NaiveUnet(1, n_feat=128), betas=(1e-4, 0.02), n_T=1000)
-    ddpm  # .to(device)
+    ddpm.to(device)
 
     tf = transforms.Compose(
         [
@@ -140,7 +140,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         pbar = tqdm(dataloader)
         for x, _ in pbar:
             optim.zero_grad()
-            x = x  # .to(device)
+            x = x.to(device)
             loss = ddpm(x)
             loss.backward()
             total_loss += loss.item()
