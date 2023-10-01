@@ -13,15 +13,15 @@ class Conv3(nn.Module):
         super().__init__()
         self.main = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
-            nn.BatchNorm2d(),
+            nn.BatchNorm2d(out_channels),
             nn.GELU(),
         )
         self.conv = nn.Sequential(
             nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            nn.BatchNorm2d(),
+            nn.BatchNorm2d(out_channels),
             nn.GELU(),
             nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            nn.BatchNorm2d(),
+            nn.BatchNorm2d(out_channels),
             nn.GELU(),
         )
 
@@ -99,7 +99,7 @@ class NaiveUnet(nn.Module):
         self.up2 = UnetUp(2 * n_feat, n_feat)
         self.out = nn.Sequential(
             nn.Conv2d(n_feat, n_feat, 3, 1, 1),
-            nn.BatchNorm2d(),
+            nn.BatchNorm2d(n_feat),
             nn.GELU(),
             nn.Conv2d(n_feat, self.in_channels, 3, 1, 1),
         )
