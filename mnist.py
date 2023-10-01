@@ -20,6 +20,7 @@ from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 from mindiffusion.unet import NaiveUnet
 import matplotlib.pyplot as plt
+import wandb
 
 
 def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
@@ -49,13 +50,6 @@ def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor
         "sqrtmab": sqrtmab,  # \sqrt{1-\bar{\alpha_t}}
         "mab_over_sqrtmab": mab_over_sqrtmab_inv,  # (1-\alpha_t)/\sqrt{1-\bar{\alpha_t}}
     }
-
-
-blk = lambda ic, oc: nn.Sequential(
-    nn.Conv2d(ic, oc, 7, padding=3),
-    nn.BatchNorm2d(oc),
-    nn.LeakyReLU(),
-)
 
 
 class DDPM(nn.Module):
@@ -111,11 +105,17 @@ class DDPM(nn.Module):
 
 
 def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
-    ddpm = DDPM(eps_model=NaiveUnet(1, 1, u_channels=128), betas=(1e-4, 0.02), n_T=1000)
+    wandb.login()
+    wandb.init(project="atia-project", config={}, tags=["mnist"])
+    ddpm = DDPM(eps_model=NaiveUnet(1, n_feat=128), betas=(1e-4, 0.02), n_T=1000)
     ddpm  # .to(device)
 
     tf = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
+        [
+            transforms.Resize(32),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (1.0)),
+        ]
     )
 
     dataset = MNIST(
@@ -131,24 +131,23 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=20)
 
     optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
+    global_steps = 0
 
     for i in range(n_epoch):
         ddpm.train()
+        total_loss = 0
 
         pbar = tqdm(dataloader)
-        loss_ema = None
         for x, _ in pbar:
             optim.zero_grad()
             x = x  # .to(device)
             loss = ddpm(x)
             loss.backward()
-            if loss_ema is None:
-                loss_ema = loss.item()
-            else:
-                loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
-            pbar.set_description(f"loss: {loss_ema:.4f}")
+            total_loss += loss.item()
+            global_steps += 1
             optim.step()
 
+        avg_loss = total_loss / len(dataloader)
         ddpm.eval()
         with torch.no_grad():
             xh = ddpm.sample(16, (1, 28, 28), device)
@@ -157,6 +156,15 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
 
             # save model
             torch.save(ddpm.state_dict(), f"./ddpm_mnist.pth")
+
+        wandb.log(
+            {
+                "epoch": i + 1,
+                "loss": avg_loss,
+                "global_steps": global_steps,
+                f"sample": wandb.Image(f"./contents/ddpm_sample_{i}.png"),
+            }
+        )
 
 
 if __name__ == "__main__":
