@@ -1,20 +1,8 @@
-"""
-Extremely Minimalistic Implementation of DDPM
-
-https://arxiv.org/abs/2006.11239
-
-Everything is self contained. (Except for pytorch and torchvision... of course)
-
-run it with `python superminddpm.py`
-"""
-
 from typing import Dict, Tuple
 from tqdm import tqdm
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-
 from torchvision.datasets import MNIST
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
