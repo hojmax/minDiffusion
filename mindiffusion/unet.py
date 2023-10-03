@@ -49,7 +49,6 @@ class UNet(nn.Module):
         self.final_conv = nn.Conv2d(c_mult, 1, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor, context: torch.Tensor = None) -> torch.Tensor:
-        print("x input", x.shape)
         # define the forward pass using skip connections
 
         # print("unet input:", x[0,0,0,0])
