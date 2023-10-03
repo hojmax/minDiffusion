@@ -26,7 +26,7 @@ def get_mnist_dataset():
 def save_sample(ddpm, path):
     ddpm.eval()
     with torch.no_grad():
-        xh = ddpm.sample(16, (1, 32, 32), ddpm.device)
+        xh = ddpm.sample(16, (1, 32, 32))
         grid = make_grid(xh, nrow=4)
         save_image(grid, path)
 
@@ -49,8 +49,9 @@ def train_mnist() -> None:
     wandb.login()
     wandb.init(project="atia-project", config=config)
 
-    ddpm = DDPM(UNet(config["unet_stages"]), config["betas"], config["n_T"])
-    ddpm.to(config["device"])
+    ddpm = DDPM(
+        UNet(config["unet_stages"]), config["betas"], config["n_T"], config["device"]
+    )
 
     os.makedirs("images", exist_ok=True)
     os.makedirs("models", exist_ok=True)

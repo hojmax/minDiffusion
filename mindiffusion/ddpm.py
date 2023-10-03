@@ -9,11 +9,12 @@ class DDPM(nn.Module):
         eps_model: nn.Module,
         betas: Tuple[float, float],
         n_T: int,
-        criterion: nn.Module = nn.MSELoss(),
+        criterion: nn.Module,
+        device,
     ) -> None:
         super(DDPM, self).__init__()
         self.eps_model = eps_model
-
+        self.device = device
         # register_buffer allows us to freely access these tensors by name. It helps device placement.
         for k, v in ddpm_schedules(betas[0], betas[1], n_T).items():
             self.register_buffer(k, v)
@@ -38,14 +39,14 @@ class DDPM(nn.Module):
 
         return self.criterion(eps, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
 
-    def sample(self, n_sample: int, size, device) -> torch.Tensor:
-        x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
+    def sample(self, n_sample: int, size) -> torch.Tensor:
+        x_i = torch.randn(n_sample, *size).to(self.device)  # x_T ~ N(0, 1)
 
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
         for i in range(self.n_T, 0, -1):
-            z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
+            z = torch.randn(n_sample, *size).to(self.device) if i > 1 else 0
             eps = self.eps_model(
-                x_i, torch.tensor(i / self.n_T).to(device).repeat(n_sample, 1)
+                x_i, torch.tensor(i / self.n_T).to(self.device).repeat(n_sample, 1)
             )
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
