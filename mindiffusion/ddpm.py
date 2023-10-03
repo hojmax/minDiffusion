@@ -15,6 +15,7 @@ class DDPM(nn.Module):
         super(DDPM, self).__init__()
         self.eps_model = eps_model
         self.device = device
+        self.eps_model.to(device)
         # register_buffer allows us to freely access these tensors by name. It helps device placement.
         for k, v in ddpm_schedules(betas[0], betas[1], n_T).items():
             self.register_buffer(k, v)
