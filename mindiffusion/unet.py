@@ -181,7 +181,7 @@ class FiLM(nn.Module):
 
     def forward(self, x: torch.Tensor, ctx: torch.Tensor) -> torch.Tensor:
         # get the affine transformation parameters from the context
-        print("ctx shape: {}".format(ctx.shape))
+        print("\nctx shape: {}".format(ctx.shape))
         print("x shape: {}".format(x.shape))
 
         params = self.context_embedding1(ctx)
@@ -189,7 +189,7 @@ class FiLM(nn.Module):
         params = self.context_embedding2(params)
 
         # apply the affine transformation to the input tensor
-        # print ("params shape: {}".format(params.shape))
+        print("params shape: {}".format(params.shape))
         gamma = params[:, : x.shape[1]]
         beta = params[:, x.shape[1] :]
 
