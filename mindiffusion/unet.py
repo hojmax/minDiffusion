@@ -49,6 +49,7 @@ class UNet(nn.Module):
         self.final_conv = nn.Conv2d(c_mult, 1, kernel_size=3, padding=1)
 
     def forward(self, x: torch.Tensor, context: torch.Tensor = None) -> torch.Tensor:
+        print("x input", x.shape)
         # define the forward pass using skip connections
 
         # print("unet input:", x[0,0,0,0])
@@ -167,16 +168,12 @@ class FiLM(nn.Module):
 
     def __init__(self, in_ch: int = 256, ctx_size: int = 1):
         super(FiLM, self).__init__()
-
         self.model = nn.Sequential(
             nn.Linear(ctx_size, in_ch), nn.GELU(), nn.Linear(in_ch, in_ch)
         )
 
     def forward(self, x: torch.Tensor, ctx: torch.Tensor) -> torch.Tensor:
         embed = self.model(ctx)
-        print(f"embedding {embed.shape}")
-        # apply channelwise
+        # apply channel-wise affine transformation
         embed = embed.view(embed.shape[0], embed.shape[1], 1, 1)
-        print(f"x {x.shape}")
-        print(f"projected embedding {embed.shape}")
         return x + embed
