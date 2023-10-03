@@ -168,35 +168,15 @@ class FiLM(nn.Module):
     def __init__(self, in_ch: int = 256, ctx_size: int = 1):
         super(FiLM, self).__init__()
 
-        # In a convolutional network, FiLM applies a different affine transformation to each channel, consistent across spatial locations.
-
-        # register the parameters of the affine transformation which depend on the context
-        # make a network that maps from context to the affine transformation parameters
-
-        self.context_embedding1 = nn.Linear(ctx_size, in_ch)
-        self.context_embedding2 = nn.Linear(in_ch, in_ch * 2)
-
-        # # set the embedding to be the identity by default
-        # self.context_embedding[2].weight.data.zero_()
+        self.model = nn.Sequential(
+            nn.Linear(ctx_size, in_ch), nn.GELU(), nn.Linear(in_ch, in_ch)
+        )
 
     def forward(self, x: torch.Tensor, ctx: torch.Tensor) -> torch.Tensor:
-        # get the affine transformation parameters from the context
-        print("\nctx shape: {}".format(ctx.shape))
-        print("x shape: {}".format(x.shape))
-
-        params = self.context_embedding1(ctx)
-        params = nn.GELU()(params)
-        params = self.context_embedding2(params)
-
-        # apply the affine transformation to the input tensor
-        print("params shape: {}".format(params.shape))
-        gamma = params[:, : x.shape[1]]
-        beta = params[:, x.shape[1] :]
-
-        # # equivalently, using einops:
-        # gamma, beta = einops.rearrange(params, 'b (g b) -> b g b', g=2)
-
-        # apply transformation, channel-wise
-        x = gamma.unsqueeze(-1).unsqueeze(-1) * x + beta.unsqueeze(-1).unsqueeze(-1)
-
-        return x
+        embed = self.model(ctx)
+        print(f"embedding {embed.shape}")
+        # apply channelwise
+        embed = embed.view(embed.shape[0], embed.shape[1], 1, 1)
+        print(f"x {x.shape}")
+        print(f"projected embedding {embed.shape}")
+        return x + embed
