@@ -47,7 +47,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         loss_ema = None
         for x, _ in pbar:
             optim.zero_grad()
-            x = x.squeeze(1).to(device)
+            x = x.to(device)
             loss = ddpm(x)
             loss.backward()
             total_loss += loss.item()
