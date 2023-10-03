@@ -108,10 +108,7 @@ class NaiveUnet(nn.Module):
         self.timeembed2 = EmbedFC(1, 1 * n_feat)
 
         self.up0 = nn.Sequential(
-            # nn.ConvTranspose2d(6 * n_feat, 2 * n_feat, 7, 7), # when concat temb and cemb end up w 6*n_feat
-            nn.ConvTranspose2d(
-                2 * n_feat, 2 * n_feat, 7, 7
-            ),  # otherwise just have 2*n_feat
+            nn.ConvTranspose2d(2 * n_feat, 2 * n_feat, 7, 7),
             nn.GroupNorm(8, 2 * n_feat),
             nn.ReLU(),
         )

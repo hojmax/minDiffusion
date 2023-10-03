@@ -37,30 +37,26 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     )
 
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=8)
-
     optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
-    xh = ddpm.sample(1, (1, 28, 28), device)
-    global_steps = 0
 
     for i in range(n_epoch):
         ddpm.train()
         total_loss = 0
-        loss_ema = None
 
         pbar = tqdm(dataloader)
+        loss_ema = None
         for x, _ in pbar:
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)
             loss.backward()
             total_loss += loss.item()
-            global_steps += 1
             optim.step()
 
             if loss_ema is None:
                 loss_ema = loss.item()
             else:
-                loss_ema = 0.95 * loss_ema + 0.05 * loss.item()
+                loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
 
             pbar.set_description(f"loss: {loss_ema:.4f}")
 
@@ -70,8 +66,8 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         model_save_path = f"models/ddpm_mnist_{i}.pth"
 
         with torch.no_grad():
-            xh = ddpm.sample(9, (1, 28, 28), device)
-            grid = make_grid(xh, nrow=3)
+            xh = ddpm.sample(16, (1, 32, 32), device)
+            grid = make_grid(xh, nrow=4)
             save_image(grid, image_save_path)
             torch.save(ddpm.state_dict(), model_save_path)
 
@@ -79,7 +75,6 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
             {
                 "epoch": i + 1,
                 "loss": avg_loss,
-                "global_steps": global_steps,
                 f"sample": wandb.Image(image_save_path),
             }
         )
