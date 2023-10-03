@@ -1,138 +1,125 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
-class ResidualConvBlock(nn.Module):
+class Conv3(nn.Module):
     def __init__(
         self, in_channels: int, out_channels: int, is_res: bool = False
     ) -> None:
         super().__init__()
-        """
-        standard ResNet style convolutional block
-        """
-        self.same_channels = in_channels == out_channels
-        self.is_res = is_res
-        self.conv1 = nn.Sequential(
+        self.main = nn.Sequential(
             nn.Conv2d(in_channels, out_channels, 3, 1, 1),
             nn.BatchNorm2d(out_channels),
             nn.GELU(),
         )
-        self.conv2 = nn.Sequential(
+        self.conv = nn.Sequential(
+            nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.BatchNorm2d(out_channels),
+            nn.GELU(),
             nn.Conv2d(out_channels, out_channels, 3, 1, 1),
             nn.BatchNorm2d(out_channels),
             nn.GELU(),
         )
 
+        self.is_res = is_res
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.main(x)
         if self.is_res:
-            x1 = self.conv1(x)
-            x2 = self.conv2(x1)
-            # this adds on correct residual in case channels have increased
-            if self.same_channels:
-                out = x + x2
-            else:
-                out = x1 + x2
-            return out / 1.414
+            x = x + self.conv(x)
+            return x / 1.414
         else:
-            x1 = self.conv1(x)
-            x2 = self.conv2(x1)
-            return x2
+            return self.conv(x)
 
 
 class UnetDown(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels: int, out_channels: int) -> None:
         super(UnetDown, self).__init__()
-        """
-        process and downscale the image feature maps
-        """
-        layers = [ResidualConvBlock(in_channels, out_channels), nn.MaxPool2d(2)]
+        layers = [Conv3(in_channels, out_channels), nn.MaxPool2d(2)]
         self.model = nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.model(x)
 
 
 class UnetUp(nn.Module):
-    def __init__(self, in_channels, out_channels):
+    def __init__(self, in_channels: int, out_channels: int) -> None:
         super(UnetUp, self).__init__()
-        """
-        process and upscale the image feature maps
-        """
         layers = [
             nn.ConvTranspose2d(in_channels, out_channels, 2, 2),
-            ResidualConvBlock(out_channels, out_channels),
-            ResidualConvBlock(out_channels, out_channels),
+            Conv3(out_channels, out_channels),
+            Conv3(out_channels, out_channels),
         ]
         self.model = nn.Sequential(*layers)
 
-    def forward(self, x, skip):
+    def forward(self, x: torch.Tensor, skip: torch.Tensor) -> torch.Tensor:
         x = torch.cat((x, skip), 1)
         x = self.model(x)
+
         return x
 
 
-class EmbedFC(nn.Module):
-    def __init__(self, input_dim, emb_dim):
-        super(EmbedFC, self).__init__()
-        """
-        generic one layer FC NN for embedding things  
-        """
-        self.input_dim = input_dim
-        layers = [
-            nn.Linear(input_dim, emb_dim),
-            nn.GELU(),
-            nn.Linear(emb_dim, emb_dim),
-        ]
-        self.model = nn.Sequential(*layers)
+class Embedding(nn.Module):
+    def __init__(self, emb_dim: int) -> None:
+        super(Embedding, self).__init__()
 
-    def forward(self, x):
-        x = x.view(-1, self.input_dim)
+        self.model = nn.Sequential(
+            nn.Linear(1, emb_dim), nn.GELU(), nn.Linear(emb_dim, emb_dim)
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = x.view(-1, 1)
         return self.model(x)
 
 
 class NaiveUnet(nn.Module):
-    def __init__(self, in_channels, n_feat=256):
+    def __init__(self, in_channels: int, n_feat: int = 256) -> None:
         super(NaiveUnet, self).__init__()
-
         self.in_channels = in_channels
         self.n_feat = n_feat
 
-        self.init_conv = ResidualConvBlock(in_channels, n_feat, is_res=True)
-
+        self.init_conv = Conv3(in_channels, n_feat, is_res=True)
         self.down1 = UnetDown(n_feat, n_feat)
         self.down2 = UnetDown(n_feat, 2 * n_feat)
 
-        self.to_vec = nn.Sequential(nn.AvgPool2d(7), nn.GELU())
+        self.timeembed1 = Embedding(2 * n_feat)
+        self.timeembed2 = Embedding(n_feat)
 
-        self.timeembed1 = EmbedFC(1, 2 * n_feat)
-        self.timeembed2 = EmbedFC(1, 1 * n_feat)
-
-        self.up0 = nn.Sequential(
-            nn.ConvTranspose2d(2 * n_feat, 2 * n_feat, 7, 7),
-            nn.GroupNorm(8, 2 * n_feat),
-            nn.ReLU(),
+        self.mid_block = nn.Sequential(
+            nn.Conv2d(2 * n_feat, 2 * n_feat, kernel_size=3, padding=1),
+            nn.GELU(),
+            nn.Conv2d(2 * n_feat, 2 * n_feat, kernel_size=3, padding=1),
+            nn.GELU(),
         )
 
         self.up1 = UnetUp(4 * n_feat, n_feat)
         self.up2 = UnetUp(2 * n_feat, n_feat)
         self.out = nn.Sequential(
-            nn.Conv2d(2 * n_feat, n_feat, 3, 1, 1),
-            nn.GroupNorm(8, n_feat),
-            nn.ReLU(),
+            nn.Conv2d(n_feat, n_feat, 3, 1, 1),
+            nn.BatchNorm2d(n_feat),
+            nn.GELU(),
             nn.Conv2d(n_feat, self.in_channels, 3, 1, 1),
         )
 
-    def forward(self, x, t):
+    def forward(self, x: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
         x = self.init_conv(x)
+        # print("init", x.shape)
         down1 = self.down1(x)
+        # print("down1", down1.shape)
         down2 = self.down2(down1)
-        hiddenvec = self.to_vec(down2)
-
-        temb1 = self.timeembed1(t).view(-1, self.n_feat * 2, 1, 1)
-        temb2 = self.timeembed2(t).view(-1, self.n_feat, 1, 1)
-
-        up1 = self.up0(hiddenvec)
-        up2 = self.up1(up1 + temb1, down2)
-        up3 = self.up2(up2 + temb2, down1)
-        out = self.out(torch.cat((up3, x), 1))
+        # print("down2", down2.shape)
+        mid = self.mid_block(down2)
+        # print("mid", mid.shape)
+        time_embed = self.timeembed1(t).view(-1, 2 * self.n_feat, 1, 1)
+        time_embed2 = self.timeembed2(t).view(-1, self.n_feat, 1, 1)
+        # print("time_embed", time_embed.shape)
+        mid = mid + time_embed
+        # print("mid2", mid.shape)
+        up1 = self.up1(mid, down2) + time_embed2
+        # print("up1", up1.shape)
+        up2 = self.up2(up1, down1)
+        # print("up2", up2.shape)
+        out = self.out(up2)
+        # print("out", out.shape)
         return out
