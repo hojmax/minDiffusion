@@ -100,22 +100,17 @@ class DDPM(nn.Module):
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
         """
-        print("x input 5", x.shape)
-        _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).unsqueeze(1).to(x.device)
+        _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).to(x.device)
         # t ~ Uniform(0, n_T)
         eps = torch.randn_like(x)  # eps ~ N(0, 1)
 
-        print("eps", eps.shape)
-        print("sqrtab", self.sqrtab.shape)
-        print("sqrtmab", self.sqrtmab.shape)
         x_t = (
             self.sqrtab[_ts, None, None, None] * x
             + self.sqrtmab[_ts, None, None, None] * eps
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
 
-        print("x_t", x_t.shape)
-        return self.criterion(eps, self.eps_model(x_t, _ts / self.n_T))
+        return self.criterion(eps, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
