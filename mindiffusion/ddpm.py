@@ -100,7 +100,6 @@ class DDPM(nn.Module):
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
         """
-        print("x shape2", x.shape)
 
         _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).unsqueeze(1).to(x.device)
         # t ~ Uniform(0, n_T)
