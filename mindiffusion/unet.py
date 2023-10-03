@@ -173,10 +173,8 @@ class FiLM(nn.Module):
         )
 
     def forward(self, x: torch.Tensor, ctx: torch.Tensor) -> torch.Tensor:
-        print("pls", x.shape)
         embed = self.model(ctx)
         # apply channel-wise affine transformation
         embed = embed.view(embed.shape[0], embed.shape[1], 1, 1)
         embed = x + embed
-        print("pls2", embed.shape)
         return embed
