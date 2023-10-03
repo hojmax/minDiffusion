@@ -173,8 +173,8 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         with torch.no_grad():
             xh = ddpm.sample(16, (1, 28, 28), device)
             grid = make_grid(xh, nrow=4)
-            image_path = f"./contents/ddpm_sample_{i}.png"
-            model_path = f"./ddpm_mnist.pth"
+            image_path = f"ddpm_sample_{i}.png"
+            model_path = f"ddpm_mnist.pth"
             save_image(grid, image_path)
             torch.save(ddpm.state_dict(), model_path)
             wandb.log(
