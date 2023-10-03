@@ -105,6 +105,9 @@ class DDPM(nn.Module):
         # t ~ Uniform(0, n_T)
         eps = torch.randn_like(x)  # eps ~ N(0, 1)
 
+        print("eps", eps.shape)
+        print("sqrtab", self.sqrtab.shape)
+        print("sqrtmab", self.sqrtmab.shape)
         x_t = (
             self.sqrtab[_ts, None, None, None] * x
             + self.sqrtmab[_ts, None, None, None] * eps
