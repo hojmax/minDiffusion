@@ -26,7 +26,7 @@ def get_mnist_dataset():
 def save_sample(ddpm, path):
     ddpm.eval()
     with torch.no_grad():
-        xh = ddpm.sample(16, (1, 32, 32))
+        xh = ddpm.sample(16, (1, 32, 32), ddpm.device)
         grid = make_grid(xh, nrow=4)
         save_image(grid, path)
 
