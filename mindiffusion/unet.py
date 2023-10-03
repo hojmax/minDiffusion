@@ -181,8 +181,8 @@ class FiLM(nn.Module):
 
     def forward(self, x: torch.Tensor, ctx: torch.Tensor) -> torch.Tensor:
         # get the affine transformation parameters from the context
-        # print ("ctx shape: {}".format(ctx.shape))
-        # print ("x shape: {}".format(x.shape))
+        print("ctx shape: {}".format(ctx.shape))
+        print("x shape: {}".format(x.shape))
 
         params = self.context_embedding1(ctx)
         params = nn.GELU()(params)
