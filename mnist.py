@@ -38,7 +38,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
 
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=2)
     optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
-
+    print("train")
     for i in range(n_epoch):
         ddpm.train()
         total_loss = 0
@@ -47,6 +47,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         loss_ema = None
         for x, _ in pbar:
             optim.zero_grad()
+            print("lol", x.shape)
             x = x.to(device)
             loss = ddpm(x)
             loss.backward()
