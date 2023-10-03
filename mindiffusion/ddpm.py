@@ -9,8 +9,8 @@ class DDPM(nn.Module):
         eps_model: nn.Module,
         betas: Tuple[float, float],
         n_T: int,
-        criterion: nn.Module,
         device,
+        criterion: nn.Module = nn.MSELoss(),
     ) -> None:
         super(DDPM, self).__init__()
         self.eps_model = eps_model
