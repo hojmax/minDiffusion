@@ -158,7 +158,6 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         pbar = tqdm(dataloader)
         loss_ema = None
         for x, _ in pbar:
-            continue
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)
