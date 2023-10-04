@@ -16,7 +16,7 @@ import os
 def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     wandb.login()
     wandb.init(project="atia-project", config={}, tags=["mnist"])
-    ddpm = DDPM(eps_model=UNet(stages=3, ctx_sz=1), betas=(1e-4, 0.02), n_T=100)
+    ddpm = DDPM(eps_model=UNet(stages=3, ctx_sz=1), betas=(1e-4, 0.02), n_T=1000)
     ddpm.to(device)
 
     os.makedirs("images", exist_ok=True)
@@ -66,8 +66,12 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
 
         with torch.no_grad():
             xh = ddpm.sample(16, (1, 32, 32), device)
-            grid = make_grid(xh, nrow=4)
-            save_image(grid, image_save_path)
+            real_images, _ = next(iter(dataloader))
+            real_images = real_images[:16].to(device)
+            real_grid = make_grid(real_images, nrow=4).to(device)
+            fake_grid = make_grid(xh, nrow=4).to(device)
+            result_grid = torch.cat((fake_grid, real_grid), dim=-1)
+            save_image(result_grid, image_save_path)
             torch.save(ddpm.state_dict(), model_save_path)
 
         wandb.log(
