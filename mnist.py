@@ -22,12 +22,12 @@ def train_mnist(n_epoch: int = 100) -> None:
         "n_T": 1000,
         "unet_stages": 3,
         "image_size": 16,
-        "c_mul": 16,
+        "c_mult": 16,
     }
     wandb.login()
     wandb.init(project="atia-project", config=config)
     ddpm = DDPM(
-        UNet(config["unet_stages"], config["c_mul"]), config["betas"], config["n_T"]
+        UNet(config["unet_stages"], config["c_mult"]), config["betas"], config["n_T"]
     )
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ddpm.to(device)

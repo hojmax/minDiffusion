@@ -9,7 +9,7 @@ import torch.utils.data as data
 class UNet(nn.Module):
     # images have 1 channel (grayscale).
 
-    def __init__(self, stages: int, c_mul: int, ctx_sz: int = 1):
+    def __init__(self, stages: int, c_mult: int, ctx_sz: int = 1):
         """`stages` defines the number of downsampling and upsampling stages. 0 stages means no downsampling or upsampling."""
         super(UNet, self).__init__()
         self.stages = stages
