@@ -23,6 +23,7 @@ def train_mnist(n_epoch: int = 100) -> None:
         "unet_stages": 3,
         "image_size": 16,
         "c_mult": 16,
+        "only_0_1": True,
     }
     wandb.login()
     wandb.init(project="atia-project", config=config)
@@ -48,6 +49,9 @@ def train_mnist(n_epoch: int = 100) -> None:
         download=True,
         transform=tf,
     )
+
+    if config["only_0_1"]:
+        dataset.data = dataset.data[dataset.targets <= 1]
 
     dataloader = DataLoader(
         dataset, batch_size=config["batch_size"], shuffle=True, num_workers=2
