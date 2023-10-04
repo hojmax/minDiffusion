@@ -16,7 +16,7 @@ import os
 def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     wandb.login()
     wandb.init(project="atia-project", config={}, tags=["mnist"])
-    ddpm = DDPM(eps_model=UNet(stages=3, ctx_sz=1), betas=(1e-4, 0.02), n_T=1000)
+    ddpm = DDPM(eps_model=UNet(stages=3, ctx_sz=1), betas=(1e-4, 0.02), n_T=100)
     ddpm.to(device)
 
     os.makedirs("images", exist_ok=True)
