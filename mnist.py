@@ -13,10 +13,23 @@ import wandb
 import os
 
 
-def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
+def train_mnist(n_epoch: int = 100) -> None:
+    config = {
+        "n_epoch": 100,
+        "batch_size": 64,
+        "lr": 4e-4,
+        "betas": (1e-4, 0.02),
+        "n_T": 1000,
+        "unet_stages": 3,
+        "image_size": 16,
+        "c_mul": 16,
+    }
     wandb.login()
-    wandb.init(project="atia-project", config={}, tags=["mnist"])
-    ddpm = DDPM(eps_model=UNet(stages=3, ctx_sz=1), betas=(1e-4, 0.02), n_T=1000)
+    wandb.init(project="atia-project", config=config)
+    ddpm = DDPM(
+        UNet(config["unet_stages"], config["c_mul"]), config["betas"], config["n_T"]
+    )
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ddpm.to(device)
 
     os.makedirs("images", exist_ok=True)
@@ -24,7 +37,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
 
     tf = transforms.Compose(
         [
-            transforms.Resize(32),
+            transforms.Resize(config["image_size"]),
             transforms.ToTensor(),
         ]
     )
@@ -36,8 +49,10 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         transform=tf,
     )
 
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True, num_workers=2)
-    optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
+    dataloader = DataLoader(
+        dataset, batch_size=config["batch_size"], shuffle=True, num_workers=2
+    )
+    optim = torch.optim.Adam(ddpm.parameters(), lr=config["lr"])
     for i in range(n_epoch):
         ddpm.train()
         total_loss = 0
@@ -65,7 +80,9 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         model_save_path = f"models/ddpm_mnist_{i}.pth"
 
         with torch.no_grad():
-            xh = ddpm.sample(16, (1, 32, 32), device)
+            xh = ddpm.sample(
+                16, (1, config["image_size"], config["image_size"]), device
+            )
             real_images, _ = next(iter(dataloader))
             real_images = real_images[:16].to(device)
             real_grid = make_grid(real_images, nrow=4).to(device)
