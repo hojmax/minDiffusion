@@ -14,7 +14,7 @@ class UNet(nn.Module):
         super(UNet, self).__init__()
         self.stages = stages
 
-        c_mult = 16
+        c_mult = 32
 
         self.context_size = ctx_sz
         self.encoders = nn.ModuleList()
