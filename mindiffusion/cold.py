@@ -27,16 +27,17 @@ class Pixelate:
 
     def get_xT(self):
         """Returns a random grey image of max size"""
-        size = self.sizes
+        size = self.sizes[-1]
         color = torch.rand(1)
         return torch.ones(1, size, size) * color
 
     def set_image_to_random_grey(self, image: torch.Tensor):
         return image * 0 + torch.rand(1)
 
-    def forward(self, image: torch.Tensor, t: int):
+    def __call__(self, image: torch.Tensor, t: int):
         # t = 0 -> fully pixelated
         # t = T - 1 -> no pixelation
+        t = t - 1
         t = self.T - 1 - t
         fromIndex = t // (self.n_between + 1)
         interpolation = (t % (self.n_between + 1)) / (self.n_between + 1)
@@ -64,13 +65,19 @@ class DDPMCold(nn.Module):
         self.criterion = criterion
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        _ts = torch.randint(0, self.n_T, (x.shape[0],)).to(x.device)
-        x_t = torch.cat([self.degradation(x[i], _ts[i]) for i in range(x.shape[0])])
-        return self.criterion(x_t, self.eps_model(x_t, _ts / self.n_T))
+        # Not sampling 1 because it's the same as the original image.
+        _ts = torch.randint(2, self.n_T + 1, (x.shape[0],)).to(x.device)
+        x_t = torch.cat(
+            [self.degradation(x[i], _ts[i]).unsqueeze(0) for i in range(x.shape[0])]
+        )
+        return self.criterion(x, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
 
-    def sample(self, device) -> torch.Tensor:
-        x_t = self.degradation.get_xT().to(device)
-        for s in range(self.n_T - 1, -1, -1):
-            x_0 = self.eps_model(x_t, torch.tensor(s / self.n_T).to(device))
-            x_t = x_t - self.degradation(x_0, s) + self.degradation(x_0, s - 1)
-        return x_t
+    def sample(self, _n_sample, _size, device) -> torch.Tensor:
+        final = torch.zeros(_n_sample, *_size).to(device)
+        for i in range(_n_sample):
+            x_t = self.degradation.get_xT().to(device)
+            for s in range(self.n_T, 1, -1):
+                x_0 = self.eps_model(x_t, torch.tensor([[s / self.n_T]]).to(device))
+                x_t = x_t - self.degradation(x_0, s) + self.degradation(x_0, s - 1)
+            final[i] = x_t
+        return final

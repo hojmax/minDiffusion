@@ -1,5 +1,5 @@
-from typing import Dict, Tuple
 from tqdm import tqdm
+from mindiffusion.cold import DDPMCold, Pixelate
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -14,24 +14,23 @@ import os
 import argparse
 
 
-def train_mnist(log_wandb: bool) -> None:
-    config = {
-        "n_epoch": 100,
-        "batch_size": 64,
-        "lr": 4e-4,
-        "betas": (1e-4, 0.02),
-        "n_T": 1000,
-        "unet_stages": 3,
-        "image_size": 16,
-        "c_mult": 16,
-        "only_0_1": True,
-        "cold": True,
-    }
+def get_ddpm(config: dict) -> nn.Module:
+    unet = UNet(config["unet_stages"], config["c_mult"])
+
+    if config["cold"]:
+        degradation = Pixelate(config["cold"]["sizes"], config["cold"]["n_between"])
+        return DDPMCold(unet, degradation, config["n_T"])
+    else:
+        return DDPM(unet, config["betas"], config["n_T"])
+
+
+def train_mnist(config, log_wandb: bool) -> None:
     if log_wandb:
         wandb.login()
         wandb.init(project="atia-project", config=config)
-    unet = UNet(config["unet_stages"], config["c_mult"])
-    ddpm = DDPM(unet, config["betas"], config["n_T"])
+
+    ddpm = get_ddpm(config)
+
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ddpm.to(device)
 
@@ -86,13 +85,14 @@ def train_mnist(log_wandb: bool) -> None:
         model_save_path = f"models/ddpm_mnist_{i}.pth"
 
         with torch.no_grad():
+            n_images = 4
             xh = ddpm.sample(
-                16, (1, config["image_size"], config["image_size"]), device
+                n_images**2, (1, config["image_size"], config["image_size"]), device
             )
             real_images, _ = next(iter(dataloader))
-            real_images = real_images[:16].to(device)
-            real_grid = make_grid(real_images, nrow=4).to(device)
-            fake_grid = make_grid(xh, nrow=4).to(device)
+            real_images = real_images[: n_images**2].to(device)
+            real_grid = make_grid(real_images, nrow=n_images).to(device)
+            fake_grid = make_grid(xh, nrow=n_images).to(device)
             result_grid = torch.cat((fake_grid, real_grid), dim=-1)
             save_image(result_grid, image_save_path)
             torch.save(ddpm.state_dict(), model_save_path)
@@ -113,4 +113,29 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--wandb", action="store_true")
     args = parser.parse_args()
-    train_mnist(args.wandb)
+    config = {
+        "n_epoch": 100,
+        "batch_size": 64,
+        "lr": 4e-4,
+        "betas": (1e-4, 0.02),
+        "unet_stages": 3,
+        "image_size": 16,
+        "c_mult": 16,
+        "only_0_1": True,
+        "cold": {
+            "sizes": [8, 16],
+            "n_between": 2,
+        },
+    }
+    if config["cold"]:
+        # img0 -> img1/N -> img2/N -> .. -> img(N-1)/N -> img1 -> img(N+1)/N ->... imgK
+        # Where a fractional image denotes a interpolation between two images (imgA and img(A+1))
+        # The number of images in the above becomes:
+        # K * N + 1
+        # This is n_T
+        config["n_T"] = (
+            len(config["cold"]["sizes"]) * (config["cold"]["n_between"] + 1) + 1
+        )
+    else:
+        config["n_T"] = 1000
+    train_mnist(config, args.wandb)
