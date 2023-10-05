@@ -11,9 +11,10 @@ from mindiffusion.ddpm import DDPM
 import matplotlib.pyplot as plt
 import wandb
 import os
+import argparse
 
 
-def train_mnist(n_epoch: int = 100) -> None:
+def train_mnist(log_wandb: bool) -> None:
     config = {
         "n_epoch": 100,
         "batch_size": 64,
@@ -24,12 +25,13 @@ def train_mnist(n_epoch: int = 100) -> None:
         "image_size": 16,
         "c_mult": 16,
         "only_0_1": True,
+        "cold": True,
     }
-    wandb.login()
-    wandb.init(project="atia-project", config=config)
-    ddpm = DDPM(
-        UNet(config["unet_stages"], config["c_mult"]), config["betas"], config["n_T"]
-    )
+    if log_wandb:
+        wandb.login()
+        wandb.init(project="atia-project", config=config)
+    unet = UNet(config["unet_stages"], config["c_mult"])
+    ddpm = DDPM(unet, config["betas"], config["n_T"])
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     ddpm.to(device)
 
@@ -57,7 +59,7 @@ def train_mnist(n_epoch: int = 100) -> None:
         dataset, batch_size=config["batch_size"], shuffle=True, num_workers=2
     )
     optim = torch.optim.Adam(ddpm.parameters(), lr=config["lr"])
-    for i in range(n_epoch):
+    for i in range(config["n_epoch"]):
         ddpm.train()
         total_loss = 0
 
@@ -95,16 +97,20 @@ def train_mnist(n_epoch: int = 100) -> None:
             save_image(result_grid, image_save_path)
             torch.save(ddpm.state_dict(), model_save_path)
 
-        wandb.log(
-            {
-                "epoch": i + 1,
-                "loss": avg_loss,
-                f"sample": wandb.Image(image_save_path),
-            }
-        )
+        if log_wandb:
+            wandb.log(
+                {
+                    "epoch": i + 1,
+                    "loss": avg_loss,
+                    f"sample": wandb.Image(image_save_path),
+                }
+            )
 
-        wandb.save(model_save_path)
+            wandb.save(model_save_path)
 
 
 if __name__ == "__main__":
-    train_mnist()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--wandb", action="store_true")
+    args = parser.parse_args()
+    train_mnist(args.wandb)
