@@ -2,6 +2,7 @@ from typing import Dict, Tuple
 import torch
 import torch.nn as nn
 from torchvision import transforms
+import matplotlib.pyplot as plt
 
 
 class DDPM(nn.Module):

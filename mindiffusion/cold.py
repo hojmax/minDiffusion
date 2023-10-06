@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
 from torchvision import transforms
+import matplotlib.pyplot as plt
+from torchvision.utils import save_image
+from torchvision.datasets import MNIST
+import matplotlib.pyplot as plt
 
 
 class Pixelate:
@@ -19,8 +23,16 @@ class Pixelate:
                 )
             )
         self.n_between = n_between
-        self.n_transforms = len(self.transforms)
-        self.T = self.n_transforms + (self.n_transforms - 1) * self.n_between
+        self.T = Pixelate.calculate_T(len(sizes), n_between)
+
+    def calculate_T(n_sizes: int, n_between: int):
+        """
+        img0 -> img1/N -> img2/N -> .. -> img(N-1)/N -> img1 -> img(N+1)/N ->... imgK
+        Where a fractional image denotes a interpolation between two images (imgA and img(A+1))
+        The number of images in the above becomes (excluding the original image):
+        K * (N+1)
+        """
+        return n_sizes * (n_between + 1)
 
     def seed(self, seed: int):
         torch.manual_seed(seed)
@@ -35,12 +47,12 @@ class Pixelate:
         return image * 0 + torch.rand(1)
 
     def __call__(self, image: torch.Tensor, t: int):
-        # t = 0 -> fully pixelated
-        # t = T - 1 -> no pixelation
-        t = t - 1
-        t = self.T - 1 - t
-        fromIndex = t // (self.n_between + 1)
-        interpolation = (t % (self.n_between + 1)) / (self.n_between + 1)
+        """
+        t = 0 -> no pixelation
+        t = T -> full pixelations
+        """
+        fromIndex = (self.T - t) // (self.n_between + 1)
+        interpolation = ((self.T - t) % (self.n_between + 1)) / (self.n_between + 1)
         fromImage = self.transforms[fromIndex](image)
         if interpolation == 0:
             return fromImage
@@ -65,19 +77,81 @@ class DDPMCold(nn.Module):
         self.criterion = criterion
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Not sampling 1 because it's the same as the original image.
-        _ts = torch.randint(2, self.n_T + 1, (x.shape[0],)).to(x.device)
+        _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).to(x.device)
         x_t = torch.cat(
             [self.degradation(x[i], _ts[i]).unsqueeze(0) for i in range(x.shape[0])]
         )
+        fig = plt.figure(figsize=(20, 5))
+        n_images = 10
+        for i in range(n_images):
+            image = x_t[i]
+            ax = fig.add_subplot(2, n_images, i + 1)
+            ax.axis("off")
+            # show t
+            ax.set_title("t={}".format(_ts[i]))
+            ax.imshow(image.squeeze(), cmap="gray", vmin=0, vmax=1)
+            ax = fig.add_subplot(2, n_images, i + 1 + n_images)
+            ax.axis("off")
+            ax.imshow(x[i].squeeze(), cmap="gray", vmin=0, vmax=1)
+
+        plt.show()
+        exit()
+
         return self.criterion(x, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
 
-    def sample(self, _n_sample, _size, device) -> torch.Tensor:
-        final = torch.zeros(_n_sample, *_size).to(device)
+    def sample(self, _n_sample, _size, device, epoch) -> torch.Tensor:
+        final = []
+        all_steps = []
         for i in range(_n_sample):
-            x_t = self.degradation.get_xT().to(device)
+            steps = []
+            x_t = self.degradation.get_xT().unsqueeze(0).to(device)
             for s in range(self.n_T, 1, -1):
+                steps.append(x_t.squeeze(0))
                 x_0 = self.eps_model(x_t, torch.tensor([[s / self.n_T]]).to(device))
                 x_t = x_t - self.degradation(x_0, s) + self.degradation(x_0, s - 1)
-            final[i] = x_t
+            steps.append(x_t.squeeze(0))
+            all_steps.append(torch.cat(steps, 1))
+            final.append(x_t.squeeze(0))
+        save_image(
+            torch.cat(all_steps, 2),
+            f"images/cold_{epoch}.png",
+        )
+
         return final
+
+
+if __name__ == "__main__":
+
+    def showImageList(images):
+        # show images side by side
+        fig = plt.figure(figsize=(20, 5))
+        for i, image in enumerate(images):
+            ax = fig.add_subplot(1, len(images), i + 1)
+            # show i above image
+            ax.set_title("t={}".format(i))
+            ax.axis("off")
+            ax.imshow(image.squeeze(), cmap="gray", vmin=0, vmax=1)
+        plt.show()
+
+    tf = transforms.Compose(
+        [
+            transforms.Resize(16),
+            transforms.ToTensor(),
+        ]
+    )
+    dataset = MNIST(
+        "./data",
+        train=True,
+        download=True,
+        transform=tf,
+    )
+    degradation = Pixelate([4, 8, 16], 5)
+    print(degradation.T)
+    print(Pixelate.calculate_T(3, 5))
+    test_image = dataset[0][0]
+    showImageList(
+        [
+            degradation.seed(17) or degradation(test_image, t)
+            for t in range(degradation.T + 1)
+        ]
+    )

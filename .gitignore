@@ -4,3 +4,5 @@ __pycache__
 ddpm*.png
 .env
 wandb
+images
+models

@@ -24,6 +24,22 @@ def get_ddpm(config: dict) -> nn.Module:
         return DDPM(unet, config["betas"], config["n_T"])
 
 
+def get_mnist(image_size: int) -> MNIST:
+    tf = transforms.Compose(
+        [
+            transforms.Resize(image_size),
+            transforms.ToTensor(),
+        ]
+    )
+    dataset = MNIST(
+        "./data",
+        train=True,
+        download=True,
+        transform=tf,
+    )
+    return dataset
+
+
 def train_mnist(config, log_wandb: bool) -> None:
     if log_wandb:
         wandb.login()
@@ -37,19 +53,7 @@ def train_mnist(config, log_wandb: bool) -> None:
     os.makedirs("images", exist_ok=True)
     os.makedirs("models", exist_ok=True)
 
-    tf = transforms.Compose(
-        [
-            transforms.Resize(config["image_size"]),
-            transforms.ToTensor(),
-        ]
-    )
-
-    dataset = MNIST(
-        "./data",
-        train=True,
-        download=True,
-        transform=tf,
-    )
+    dataset = get_mnist(config["image_size"])
 
     if config["only_0_1"]:
         dataset.data = dataset.data[dataset.targets <= 1]
@@ -87,7 +91,10 @@ def train_mnist(config, log_wandb: bool) -> None:
         with torch.no_grad():
             n_images = 4
             xh = ddpm.sample(
-                n_images**2, (1, config["image_size"], config["image_size"]), device
+                n_images**2,
+                (1, config["image_size"], config["image_size"]),
+                device,
+                i,
             )
             real_images, _ = next(iter(dataloader))
             real_images = real_images[: n_images**2].to(device)
@@ -124,17 +131,12 @@ if __name__ == "__main__":
         "only_0_1": True,
         "cold": {
             "sizes": [8, 16],
-            "n_between": 2,
+            "n_between": 10,
         },
     }
     if config["cold"]:
-        # img0 -> img1/N -> img2/N -> .. -> img(N-1)/N -> img1 -> img(N+1)/N ->... imgK
-        # Where a fractional image denotes a interpolation between two images (imgA and img(A+1))
-        # The number of images in the above becomes:
-        # K * N + 1
-        # This is n_T
-        config["n_T"] = (
-            len(config["cold"]["sizes"]) * (config["cold"]["n_between"] + 1) + 1
+        config["n_T"] = Pixelate.calculate_T(
+            len(config["cold"]["sizes"]), config["cold"]["n_between"]
         )
     else:
         config["n_T"] = 1000
