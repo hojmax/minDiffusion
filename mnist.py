@@ -7,6 +7,7 @@ from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 from mindiffusion.unet import UNet
 from mindiffusion.ddpm import DDPM
+from mindiffusion.pyramidal import DDPM as PyramidalDDPM
 import matplotlib.pyplot as plt
 import wandb
 import os
@@ -14,8 +15,24 @@ import argparse
 
 
 def get_ddpm(config: dict) -> nn.Module:
-    unet = UNet(config["unet_stages"], config["channel_multiplier"])
-    return DDPM(unet, config["betas"], config["T_full"])
+    if config["pyramidal"]:
+        # 1 (image) + 2 channels (x,y) * 2 (sin, cos) * degree
+        input_channels = 1 + 2 * 2 * config["positional_degree"]
+        unet = UNet(input_channels, config["unet_stages"], config["channel_multiplier"])
+        return PyramidalDDPM(
+            unet,
+            config["betas"],
+            config["T_full"],
+            config["T_scaled"],
+            config["T_delta"],
+            config["image_sizes"],
+            config["positional_degree"],
+            config["batch_size"],
+        )
+    else:
+        input_channels = 1
+        unet = UNet(input_channels, config["unet_stages"], config["channel_multiplier"])
+        return DDPM(unet, config["betas"], config["T_full"])
 
 
 def get_mnist(image_size: int) -> MNIST:
@@ -46,7 +63,7 @@ def train_mnist(config, log_wandb: bool) -> None:
     os.makedirs("images", exist_ok=True)
     os.makedirs("models", exist_ok=True)
 
-    dataset = get_mnist(config["image_size"])
+    dataset = get_mnist(max(config["image_sizes"]))
 
     if config["only_0_1"]:
         dataset.data = dataset.data[dataset.targets <= 1]
@@ -85,9 +102,10 @@ def train_mnist(config, log_wandb: bool) -> None:
 
         with torch.no_grad():
             n_images = 4
+            image_size = (1, max(config["image_sizes"]), max(config["image_sizes"]))
             xh = ddpm.sample(
                 n_images**2,
-                (1, config["image_size"], config["image_size"]),
+                image_size,
                 device,
                 i,
             )
@@ -121,12 +139,13 @@ if __name__ == "__main__":
         "lr": 4e-4,
         "betas": (1e-4, 0.02),
         "unet_stages": 3,
-        # "image_sizes": [8, 16, 32],
-        "image_size": 16,
+        "image_sizes": [8, 16],
         "channel_multiplier": 16,
         "only_0_1": True,
+        "pyramidal": True,
         "T_full": 100,
         "T_scaled": 100,
         "T_delta": 0.5,
+        "positional_degree": 1,
     }
     train_mnist(config, args.wandb)
