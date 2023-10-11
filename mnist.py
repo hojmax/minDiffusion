@@ -17,11 +17,7 @@ import argparse
 def get_ddpm(config: dict) -> nn.Module:
     unet = UNet(config["unet_stages"], config["c_mult"])
 
-    if config["cold"]:
-        degradation = Pixelate(config["cold"]["sizes"], config["cold"]["n_between"])
-        return DDPMCold(unet, degradation, config["n_T"])
-    else:
-        return DDPM(unet, config["betas"], config["n_T"])
+    return DDPM(unet, config["betas"], config["n_T"])
 
 
 def get_mnist(image_size: int) -> MNIST:
@@ -126,18 +122,9 @@ if __name__ == "__main__":
         "lr": 4e-4,
         "betas": (1e-4, 0.02),
         "unet_stages": 3,
-        "image_size": 16,
+        "image_size": 8,
         "c_mult": 16,
         "only_0_1": True,
-        "cold": {
-            "sizes": [8, 16],
-            "n_between": 10,
-        },
+        "n_T": 1000,
     }
-    if config["cold"]:
-        config["n_T"] = Pixelate.calculate_T(
-            len(config["cold"]["sizes"]), config["cold"]["n_between"]
-        )
-    else:
-        config["n_T"] = 1000
     train_mnist(config, args.wandb)
