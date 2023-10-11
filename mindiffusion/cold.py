@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from torchvision.utils import save_image
 from torchvision.datasets import MNIST
 import matplotlib.pyplot as plt
+import random
 
 
 class Pixelate:
@@ -76,39 +77,48 @@ class DDPMCold(nn.Module):
         self.n_T = n_T
         self.criterion = criterion
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, should_show: bool) -> torch.Tensor:
         _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).to(x.device)
         x_t = torch.cat(
             [self.degradation(x[i], _ts[i]).unsqueeze(0) for i in range(x.shape[0])]
         )
-        fig = plt.figure(figsize=(20, 5))
-        n_images = 10
-        for i in range(n_images):
-            image = x_t[i]
-            ax = fig.add_subplot(2, n_images, i + 1)
-            ax.axis("off")
-            # show t
-            ax.set_title("t={}".format(_ts[i]))
-            ax.imshow(image.squeeze(), cmap="gray", vmin=0, vmax=1)
-            ax = fig.add_subplot(2, n_images, i + 1 + n_images)
-            ax.axis("off")
-            ax.imshow(x[i].squeeze(), cmap="gray", vmin=0, vmax=1)
-
-        plt.show()
-        exit()
-
-        return self.criterion(x, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
+        model_output = self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T)
+        if should_show:
+            fig = plt.figure(figsize=(20, 5))
+            n_images = 10
+            for i in range(n_images):
+                image = x_t[i]
+                ax = fig.add_subplot(3, n_images, i + 1)
+                ax.axis("off")
+                ax.set_title("t={}".format(_ts[i]))
+                ax.imshow(image.squeeze(), cmap="gray", vmin=0, vmax=1)
+                ax = fig.add_subplot(3, n_images, i + 1 + n_images)
+                ax.axis("off")
+                ax.imshow(x[i].squeeze(), cmap="gray", vmin=0, vmax=1)
+                ax = fig.add_subplot(3, n_images, i + 1 + 2 * n_images)
+                ax.axis("off")
+                ax.imshow(
+                    model_output[i].detach().squeeze(), cmap="gray", vmin=0, vmax=1
+                )
+            plt.show()
+        return self.criterion(x, model_output)
 
     def sample(self, _n_sample, _size, device, epoch) -> torch.Tensor:
         final = []
         all_steps = []
         for i in range(_n_sample):
+            random_seed = random.randint(0, 100000)
             steps = []
+            self.degradation.seed(random_seed)
             x_t = self.degradation.get_xT().unsqueeze(0).to(device)
             for s in range(self.n_T, 1, -1):
                 steps.append(x_t.squeeze(0))
                 x_0 = self.eps_model(x_t, torch.tensor([[s / self.n_T]]).to(device))
-                x_t = x_t - self.degradation(x_0, s) + self.degradation(x_0, s - 1)
+                self.degradation.seed(random_seed)
+                d_s = self.degradation(x_0, s)
+                self.degradation.seed(random_seed)
+                d_s1 = self.degradation(x_0, s - 1)
+                x_t = x_t - d_s + d_s1
             steps.append(x_t.squeeze(0))
             all_steps.append(torch.cat(steps, 1))
             final.append(x_t.squeeze(0))

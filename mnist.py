@@ -71,7 +71,7 @@ def train_mnist(config, log_wandb: bool) -> None:
         for x, _ in pbar:
             optim.zero_grad()
             x = x.to(device)
-            loss = ddpm(x)
+            loss = ddpm(x, False)
             loss.backward()
             total_loss += loss.item()
             optim.step()
