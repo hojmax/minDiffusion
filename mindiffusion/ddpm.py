@@ -23,7 +23,7 @@ class DDPM(nn.Module):
         self.n_T = n_T
         self.criterion = criterion
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, should_show=False) -> torch.Tensor:
         """
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
@@ -38,7 +38,37 @@ class DDPM(nn.Module):
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
 
-        return self.criterion(eps, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
+        model_output = self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T)
+
+        if should_show:
+            fig = plt.figure(figsize=(20, 5))
+            n_images = 10
+            for i in range(n_images):
+                t_i = _ts[i]
+                image = x_t[i]
+                ax = fig.add_subplot(3, n_images, i + 1)
+                ax.axis("off")
+                ax.set_title("t={}".format(t_i))
+                ax.imshow(image.squeeze(), cmap="gray", vmin=0, vmax=1)
+                ax = fig.add_subplot(3, n_images, i + 1 + n_images)
+                ax.axis("off")
+                ax.imshow(x[i].squeeze(), cmap="gray", vmin=0, vmax=1)
+                ax = fig.add_subplot(3, n_images, i + 1 + 2 * n_images)
+                ax.axis("off")
+                ax.imshow(
+                    self.oneover_sqrta[t_i]
+                    * (
+                        image.squeeze()
+                        - model_output[i].detach().squeeze()
+                        * self.mab_over_sqrtmab[t_i]
+                    ),
+                    cmap="gray",
+                    vmin=0,
+                    vmax=1,
+                )
+            plt.show()
+
+        return self.criterion(eps, model_output)
 
     def sample(self, n_sample: int, size, device, epoch) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)

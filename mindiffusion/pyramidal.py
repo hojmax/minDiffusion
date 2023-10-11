@@ -76,11 +76,13 @@ class DDPM(nn.Module):
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
         """
-        random_size = np.random.choice(self.sizes)
+        random_size = 8  # np.random.choice(self.sizes)
         is_min_size = random_size == self.min_size
         scheduele = self.full_scheduele if is_min_size else self.scaled_scheduele
         sqrtab = scheduele["sqrtab"]
         sqrtmab = scheduele["sqrtmab"]
+        # oneover_sqrta = scheduele["oneover_sqrta"]
+        # mab_over_sqrtmab = scheduele["mab_over_sqrtmab"]
 
         x = self.rescaling[random_size](x)
 
@@ -93,8 +95,8 @@ class DDPM(nn.Module):
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
 
-        positional = self.batch_positional[random_size].to(x.device)
-        x_t = torch.cat((x_t, positional), dim=1)
+        # positional = self.batch_positional[random_size].to(x.device)
+        # x_t_pos = torch.cat((x_t, positional), dim=1)
 
         model_output = self.eps_model(x_t, _ts.unsqueeze(1) / scheduele["t"])
 
@@ -102,10 +104,11 @@ class DDPM(nn.Module):
             fig = plt.figure(figsize=(20, 5))
             n_images = 10
             for i in range(n_images):
+                t_i = _ts[i]
                 image = x_t[i]
                 ax = fig.add_subplot(3, n_images, i + 1)
                 ax.axis("off")
-                ax.set_title("t={}".format(_ts[i]))
+                ax.set_title("t={}".format(t_i))
                 ax.imshow(image.squeeze(), cmap="gray", vmin=0, vmax=1)
                 ax = fig.add_subplot(3, n_images, i + 1 + n_images)
                 ax.axis("off")
@@ -113,7 +116,15 @@ class DDPM(nn.Module):
                 ax = fig.add_subplot(3, n_images, i + 1 + 2 * n_images)
                 ax.axis("off")
                 ax.imshow(
-                    model_output[i].detach().squeeze(), cmap="gray", vmin=0, vmax=1
+                    # oneover_sqrta[t_i]
+                    # * (
+                    #     image.squeeze()
+                    #     - model_output[i].detach().squeeze() * mab_over_sqrtmab[t_i]
+                    # ),
+                    model_output[i].detach().squeeze(),
+                    cmap="gray",
+                    vmin=0,
+                    vmax=1,
                 )
             plt.show()
 
@@ -131,9 +142,10 @@ class DDPM(nn.Module):
             positional = (
                 self.positional[x_t_size].repeat(x_t.shape[0], 1, 1, 1).to(device)
             )
-            x_t = torch.cat((x_t, positional), dim=1)
+            x_t_pos = torch.cat((x_t, positional), dim=1)
             eps = self.eps_model(
-                x_t, torch.tensor(i / t_scheduele).to(device).repeat(x_t.shape[0], 1)
+                x_t_pos,
+                torch.tensor(i / t_scheduele).to(device).repeat(x_t.shape[0], 1),
             )
             x_t = (
                 oneover_sqrta[i] * (x_t - eps * mab_over_sqrtmab[i])
