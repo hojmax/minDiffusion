@@ -30,7 +30,7 @@ class DDPM(nn.Module):
         This implements Algorithm 1 in the paper.
         """
         self.saved_x = x
-        _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).to(x.device)
+        _ts = torch.randint(1, self.n_T + 1, (x.shape[0],))
         # t ~ Uniform(0, n_T)
         eps = torch.randn_like(x)  # eps ~ N(0, 1)
 
@@ -40,7 +40,9 @@ class DDPM(nn.Module):
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
 
-        return self.criterion(eps, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
+        return self.criterion(
+            eps, self.eps_model(x_t, _ts.to(x.device).unsqueeze(1) / self.n_T)
+        )
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
