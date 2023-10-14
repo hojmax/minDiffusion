@@ -109,7 +109,7 @@ class Block(nn.Module):
 class UNet(nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
         super(UNet, self).__init__()
-        n = 16
+        n = 32
         self.input1 = Block(input_channels, n, "same")
         self.encoder2 = Block(n, 2 * n, "down")
         self.encoder3 = Block(2 * n, 4 * n, "down")
@@ -205,25 +205,27 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         transform=tf,
     )
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-    optim = torch.optim.Adam(ddpm.parameters(), lr=2e-4)
+    optim = torch.optim.Adam(ddpm.parameters(), lr=2e-3)
 
     for i in range(n_epoch):
         ddpm.train()
 
         pbar = tqdm(dataloader)
         loss_ema = None
+        total_loss = 0
         for x, _ in pbar:
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)
             loss.backward()
+            total_loss += loss.item()
             if loss_ema is None:
                 loss_ema = loss.item()
             else:
                 loss_ema = 0.9 * loss_ema + 0.1 * loss.item()
             pbar.set_description(f"loss: {loss_ema:.4f}")
             optim.step()
-
+        avg_loss = total_loss / len(dataloader)
         ddpm.eval()
         with torch.no_grad():
             xh = ddpm.sample(16, (1, 28, 28), device)
@@ -235,6 +237,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
             wandb.log(
                 {
                     "epoch": i + 1,
+                    "loss": avg_loss,
                     f"sample": wandb.Image(image_path),
                 }
             )
