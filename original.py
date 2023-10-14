@@ -109,24 +109,22 @@ class Block(nn.Module):
 class UNet(nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
         super(UNet, self).__init__()
-        n = 16
+        n = 8
         self.input1 = Block(input_channels, n, "same")
         self.encoder2 = Block(n, 2 * n, "down")
         self.encoder3 = Block(2 * n, 4 * n, "down")
-        self.bottle1 = Block(4 * n, 4 * n, "same")
+        # self.bottle1 = Block(4 * n, 4 * n, "same")
         self.decoder1 = Block(4 * n, 2 * n, "up")
-        # skip connection -> *2
-        self.decoder2 = Block(2 * 2 * n, 16, "up")
-        # skip connection -> *2
-        self.output1 = Block(2 * n, n, "same")
+        self.decoder2 = Block(2 * 2 * n, n, "up")  # skip connection -> *2
+        self.output1 = Block(2 * n, n, "same")  # skip connection -> *2
         self.final = nn.Conv2d(n, output_channels, kernel_size=3, padding=1)
 
     def forward(self, x, t) -> torch.Tensor:
         i1 = self.input1(x, t)
         e2 = self.encoder2(i1, t)
         e3 = self.encoder3(e2, t)
-        b1 = self.bottle1(e3, t)
-        d1 = self.decoder1(b1, t)
+        # b1 = self.bottle1(e3, t)
+        d1 = self.decoder1(e3, t)
         d2 = self.decoder2(torch.cat([d1, e2], dim=1), t)
         o1 = self.output1(torch.cat([d2, i1], dim=1), t)
         f = self.final(o1)
