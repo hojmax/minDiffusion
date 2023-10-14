@@ -90,7 +90,6 @@ def train_mnist(config, log_wandb: bool) -> None:
                 n_images**2,
                 (1, config["image_size"], config["image_size"]),
                 device,
-                i,
             )
             real_images, _ = next(iter(dataloader))
             real_images = real_images[: n_images**2].to(device)
