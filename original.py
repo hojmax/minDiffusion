@@ -50,34 +50,87 @@ def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor
     }
 
 
-blk = lambda ic, oc: nn.Sequential(
-    nn.Conv2d(ic, oc, 7, padding=3),
-    nn.BatchNorm2d(oc),
-    nn.LeakyReLU(),
-)
+class TimeEmbed(nn.Module):
+    """https://distill.pub/2018/feature-wise-transformations/"""
 
-
-class DummyEpsModel(nn.Module):
-    """
-    This should be unet-like, but let's don't think about the model too much :P
-    Basically, any universal R^n -> R^n model should work.
-    """
-
-    def __init__(self, n_channel: int) -> None:
-        super(DummyEpsModel, self).__init__()
-        self.conv = nn.Sequential(  # with batchnorm
-            blk(n_channel, 16),
-            blk(16, 32),
-            blk(32, 64),
-            blk(64, 64),
-            blk(64, 32),
-            blk(32, 16),
-            nn.Conv2d(16, n_channel, 3, padding=1),
+    def __init__(self, input_size, output_size):
+        super(TimeEmbed, self).__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_size, output_size),
+            nn.GELU(),
+            nn.Linear(output_size, output_size),
         )
 
+    def forward(
+        self, channel_block: torch.Tensor, time_steps: torch.Tensor
+    ) -> torch.Tensor:
+        embed = self.model(time_steps)
+        embed = embed.view(embed.shape[0], embed.shape[1], 1, 1)
+        embed = channel_block + embed
+        return embed
+
+
+class Block(nn.Module):
+    # takes input size and output size
+    def __init__(self, in_ch: int, out_ch: int, up_or_down: str):
+        super(Block, self).__init__()
+        in_ch = int(in_ch)
+        out_ch = int(out_ch)
+        self.conv1 = nn.Conv2d(in_ch, out_ch, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1)
+        self.timeEmbed = TimeEmbed(1, in_ch)
+        self.up_or_down = up_or_down
+        if self.up_or_down == "down":
+            self.pool = nn.MaxPool2d(2, 2)
+        elif self.up_or_down == "up":
+            self.upsample = nn.Upsample(
+                scale_factor=2, mode="bilinear", align_corners=True
+            )
+        self.gelu = nn.GELU()
+        self.batchnorm = nn.BatchNorm2d(out_ch)
+
+    def forward(self, x: torch.Tensor, time_steps: torch.Tensor = None) -> torch.Tensor:
+        if self.up_or_down == "down":
+            x = self.pool(x)
+
+        x = self.timeEmbed(x, time_steps)
+        x = self.conv1(x)
+        x = self.gelu(x)
+        x = self.conv2(x)
+        x = self.gelu(x)
+        x = self.batchnorm(x)
+
+        if self.up_or_down == "up":
+            x = self.upsample(x)
+
+        return x
+
+
+class UNet(nn.Module):
+    def __init__(self, input_channels: int, output_channels: int) -> None:
+        super(UNet, self).__init__()
+        n = 16
+        self.input1 = Block(input_channels, n, "same")
+        self.encoder2 = Block(n, 2 * n, "down")
+        self.encoder3 = Block(2 * n, 4 * n, "down")
+        self.bottle1 = Block(4 * n, 4 * n, "same")
+        self.decoder1 = Block(4 * n, 2 * n, "up")
+        # skip connection -> *2
+        self.decoder2 = Block(2 * 2 * n, 16, "up")
+        # skip connection -> *2
+        self.output1 = Block(2 * n, n, "same")
+        self.final = nn.Conv2d(n, output_channels, kernel_size=3, padding=1)
+
     def forward(self, x, t) -> torch.Tensor:
-        # Lets think about using t later. In the paper, they used Tr-like positional embeddings.
-        return self.conv(x)
+        i1 = self.input1(x, t)
+        e2 = self.encoder2(i1, t)
+        e3 = self.encoder3(e2, t)
+        b1 = self.bottle1(e3, t)
+        d1 = self.decoder1(b1, t)
+        d2 = self.decoder2(torch.cat([d1, e2], dim=1), t)
+        o1 = self.output1(torch.cat([d2, i1], dim=1), t)
+        f = self.final(o1)
+        return f
 
 
 class DDPM(nn.Module):
@@ -115,7 +168,7 @@ class DDPM(nn.Module):
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
 
-        return self.criterion(eps, self.eps_model(x_t, _ts / self.n_T))
+        return self.criterion(eps, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
@@ -123,7 +176,7 @@ class DDPM(nn.Module):
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
         for i in range(self.n_T, 0, -1):
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
-            eps = self.eps_model(x_i, i / self.n_T)
+            eps = self.eps_model(x_i, torch.tensor([[i / self.n_T]]))
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
@@ -135,7 +188,11 @@ class DDPM(nn.Module):
 def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
     wandb.login()
     wandb.init(project="atia-project", config={}, tags=["mnist"])
-    ddpm = DDPM(eps_model=DummyEpsModel(1), betas=(1e-4, 0.02), n_T=1000)
+    ddpm = DDPM(
+        eps_model=UNet(input_channels=1, output_channels=1),
+        betas=(1e-4, 0.02),
+        n_T=1000,
+    )
     ddpm.to(device)
 
     tf = transforms.Compose(
