@@ -66,14 +66,13 @@ class DummyEpsModel(nn.Module):
     def __init__(self, n_channel: int) -> None:
         super(DummyEpsModel, self).__init__()
         self.conv = nn.Sequential(  # with batchnorm
-            blk(n_channel, 64),
-            blk(64, 128),
-            blk(128, 256),
-            blk(256, 512),
-            blk(512, 256),
-            blk(256, 128),
-            blk(128, 64),
-            nn.Conv2d(64, n_channel, 3, padding=1),
+            blk(n_channel, 16),
+            blk(16, 32),
+            blk(32, 64),
+            blk(64, 64),
+            blk(64, 32),
+            blk(32, 16),
+            nn.Conv2d(16, n_channel, 3, padding=1),
         )
 
     def forward(self, x, t) -> torch.Tensor:

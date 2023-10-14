@@ -1,5 +1,4 @@
 from tqdm import tqdm
-from mindiffusion.cold import DDPMCold, Pixelate
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -65,6 +64,8 @@ def train_mnist(config, log_wandb: bool) -> None:
         pbar = tqdm(dataloader)
         loss_ema = None
         for x, _ in pbar:
+            if total_loss > 0:
+                continue
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)

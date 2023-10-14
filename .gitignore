@@ -6,3 +6,4 @@ ddpm*.png
 wandb
 images
 models
+tensor.ipynb
