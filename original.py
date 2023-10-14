@@ -174,7 +174,8 @@ class DDPM(nn.Module):
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
         for i in range(self.n_T, 0, -1):
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
-            eps = self.eps_model(x_i, torch.tensor([[i / self.n_T]]))
+            time = torch.tensor([[i / self.n_T]]).to(device)
+            eps = self.eps_model(x_i, time)
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
