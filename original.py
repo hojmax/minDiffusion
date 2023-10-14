@@ -109,7 +109,7 @@ class Block(nn.Module):
 class UNet(nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
         super(UNet, self).__init__()
-        n = 64
+        n = 128
         self.input1 = Block(input_channels, n, "same")
         self.encoder2 = Block(n, 2 * n, "down")
         self.encoder3 = Block(2 * n, 4 * n, "down")
@@ -205,7 +205,7 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         transform=tf,
     )
     dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-    optim = torch.optim.Adam(ddpm.parameters(), lr=2e-3)
+    optim = torch.optim.Adam(ddpm.parameters(), lr=5e-3)
 
     for i in range(n_epoch):
         ddpm.train()
