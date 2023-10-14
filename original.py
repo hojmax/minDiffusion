@@ -109,7 +109,7 @@ class Block(nn.Module):
 class UNet(nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
         super(UNet, self).__init__()
-        n = 32
+        n = 64
         self.input1 = Block(input_channels, n, "same")
         self.encoder2 = Block(n, 2 * n, "down")
         self.encoder3 = Block(2 * n, 4 * n, "down")
