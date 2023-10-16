@@ -29,7 +29,7 @@ def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor
     """
     assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
-    beta_t = (beta2 - beta1) * torch.arange(0, T + 1, dtype=torch.float32) / T + beta1
+    beta_t = (beta2 - beta1) * torch.arange(0, T, dtype=torch.float32) / (T - 1) + beta1
     sqrt_beta_t = torch.sqrt(beta_t)
     alpha_t = 1 - beta_t
     log_alpha_t = torch.log(alpha_t)
@@ -70,16 +70,20 @@ class DDPM(nn.Module):
         self.n_T = n_T
         self.criterion = criterion
         self.should_save_pngs = False
+        self.last_x = None
+
+        # print(f"ab[{len(self.sqrtab)}]", self.sqrtab)
+        # print(f"mab[{len(self.sqrtmab)}]", self.sqrtmab)
+        # print("t=", self.n_T)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
         """
-
-        time = torch.randint(1, self.n_T, (x.shape[0],)).to(
+        time = torch.randint(0, self.n_T, (x.shape[0],)).to(
             x.device
-        )  # t ~ Uniform(0, n_T)
+        )  # (zero indexed, so (0, n_T-1) equal to (1, n_T) in the paper)
         eps = torch.randn_like(x)  # eps ~ N(0, 1)
 
         x_t = (
@@ -94,26 +98,66 @@ class DDPM(nn.Module):
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
 
         reverse = []
+        predictions = []
 
+        if self.should_save_pngs:
+            reverse.append(x_i)
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
-        for i in range(self.n_T, 0, -1):
-            if self.should_save_pngs:
-                reverse.append(x_i)
-            z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
+        for i in range(self.n_T - 1, -1, -1):
+            z = torch.randn(n_sample, *size).to(device) if i > 0 else 0
             time = (torch.ones(n_sample) * i).to(device)
             eps = self.eps_model(x_i, time)
             x_i = (
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
             )
-        if self.should_save_pngs:
-            reverse.append(x_i)
+            if self.should_save_pngs:
+                reverse.append(x_i)
+                predictions.append(
+                    self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
+                )
+
+        predictions.append(torch.zeros_like(x_i))
 
         if self.should_save_pngs:
             reverse_img = torch.cat(
                 [make_image_row(x).squeeze(0).squeeze(0) for x in reverse], dim=0
             )
-            save_image(reverse_img, "reverse.png")
+            predictions_img = torch.cat(
+                [make_image_row(x).squeeze(0).squeeze(0) for x in predictions], dim=0
+            )
+            real_x = self.last_x[:n_sample]
+
+            predictions2 = []
+            forward = []
+            for t in range(self.n_T, 0, -1):
+                eps = torch.randn_like(real_x)
+                time = (torch.ones(n_sample) * t).long().to(device)
+                forward.append(
+                    self.sqrtab[time, None, None, None] * real_x
+                    + self.sqrtmab[time, None, None, None] * eps
+                )
+                eps = self.eps_model(forward[-1], time)
+                predictions2.append(
+                    self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
+                )
+
+            forward.append(real_x)
+            predictions2.append(torch.zeros_like(real_x))
+
+            forward_img = torch.cat(
+                [make_image_row(x).squeeze(0).squeeze(0) for x in forward], dim=0
+            )
+            predictions2_img = torch.cat(
+                [make_image_row(x).squeeze(0).squeeze(0) for x in predictions2], dim=0
+            )
+
+            combined_image = torch.cat(
+                [forward_img, predictions2_img, reverse_img, predictions_img], dim=1
+            )
+
+            save_image(combined_image, f"combined.png")
+            exit()
 
         return x_i
 
@@ -171,6 +215,7 @@ def train_mnist(args) -> None:
         betas=(1e-4, 0.02),
         n_T=100,
     )
+    ddpm.should_save_pngs = True
     if args.pretrained_model_path:
         ddpm.load_state_dict(
             torch.load(args.pretrained_model_path, map_location=device)
@@ -196,6 +241,10 @@ def train_mnist(args) -> None:
         loss_ema = None
         total_loss = 0
         for x, _ in pbar:
+            ddpm.last_x = x.to(device)
+            continue
+            # if total_loss > 0:
+            #     continue
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)
@@ -210,7 +259,7 @@ def train_mnist(args) -> None:
         avg_loss = total_loss / len(dataloader)
         ddpm.eval()
         with torch.no_grad():
-            xh = ddpm.sample(16, (1, 28, 28), device)
+            xh = ddpm.sample(2, (1, 28, 28), device)
             grid = make_grid(xh, nrow=4)
             image_path = f"ddpm_sample_{i}.png"
             model_path = f"ddpm_mnist_{i}.pth"
