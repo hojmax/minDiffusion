@@ -69,6 +69,7 @@ class DDPM(nn.Module):
 
         self.n_T = n_T
         self.criterion = criterion
+        self.should_save_pngs = False
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -92,8 +93,12 @@ class DDPM(nn.Module):
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
 
+        reverse = []
+
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
         for i in range(self.n_T, 0, -1):
+            if self.should_save_pngs:
+                reverse.append(x_i)
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
             time = (torch.ones(n_sample) * i).to(device)
             eps = self.eps_model(x_i, time)
@@ -101,11 +106,43 @@ class DDPM(nn.Module):
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
             )
+        if self.should_save_pngs:
+            reverse.append(x_i)
+
+        if self.should_save_pngs:
+            reverse_img = torch.cat(
+                [make_image_row(x).squeeze(0).squeeze(0) for x in reverse], dim=0
+            )
+            save_image(reverse_img, "reverse.png")
 
         return x_i
 
 
-def train_mnist(log_wandb) -> None:
+# class DummyNetwork(nn.Module):
+#     def __init__(self) -> None:
+#         super(DummyNetwork, self).__init__()
+#         self.net = nn.Sequential(
+#             nn.Conv2d(1, 32, 3, 1, 1),
+#             nn.ReLU(),
+#             nn.Conv2d(32, 64, 3, 1, 1),
+#             nn.ReLU(),
+#             nn.Conv2d(64, 1, 3, 1, 1),
+#         )
+
+#     def forward(self, x: torch.Tensor, time: torch.Tensor) -> torch.Tensor:
+#         return self.net(x)
+
+
+def make_image_row(x: torch.Tensor):
+    """
+    Take tensor (B x C x H x W)
+    And outputs a tensor (1 x C x H x W*B)
+    Where each of the H x W images are placed side by side
+    """
+    return torch.cat(torch.split(x, 1, dim=0), dim=3)
+
+
+def train_mnist(args) -> None:
     model_config = {
         "resolution": 28,
         "in_channels": 1,
@@ -119,9 +156,9 @@ def train_mnist(log_wandb) -> None:
         "attn_resolutions": (14,),
         "dropout": 0.1,
     }
-    if log_wandb:
+    if args.log_wandb:
         wandb.login()
-        wandb.init(project="atia-project", config={}, tags=["mnist"])
+        wandb.init(project="atia-project", config=model_config)
     device = torch.device(
         "cuda:0"
         if torch.cuda.is_available()
@@ -132,8 +169,12 @@ def train_mnist(log_wandb) -> None:
     ddpm = DDPM(
         eps_model=Model(**model_config),
         betas=(1e-4, 0.02),
-        n_T=1000,
+        n_T=100,
     )
+    if args.pretrained_model_path:
+        ddpm.load_state_dict(
+            torch.load(args.pretrained_model_path, map_location=device)
+        )
     ddpm.to(device)
     n_epoch = 100
 
@@ -172,10 +213,10 @@ def train_mnist(log_wandb) -> None:
             xh = ddpm.sample(16, (1, 28, 28), device)
             grid = make_grid(xh, nrow=4)
             image_path = f"ddpm_sample_{i}.png"
-            model_path = f"ddpm_mnist.pth"
+            model_path = f"ddpm_mnist_{i}.pth"
             save_image(grid, image_path)
             torch.save(ddpm.state_dict(), model_path)
-            if log_wandb:
+            if args.log_wandb:
                 wandb.log(
                     {
                         "epoch": i + 1,
@@ -189,5 +230,6 @@ def train_mnist(log_wandb) -> None:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--log_wandb", action="store_true")
+    parser.add_argument("--pretrained_model_path", type=str, default="")
     args = parser.parse_args()
-    train_mnist(args.log_wandb)
+    train_mnist(args)
