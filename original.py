@@ -155,7 +155,6 @@ def train_mnist(log_wandb) -> None:
         loss_ema = None
         total_loss = 0
         for x, _ in pbar:
-            continue
             optim.zero_grad()
             x = x.to(device)
             loss = ddpm(x)
