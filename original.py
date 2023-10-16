@@ -61,6 +61,7 @@ class TimeEmbed(nn.Module):
             nn.GELU(),
             nn.Linear(output_size, output_size),
         )
+        self.gelu = nn.GELU()
 
     def forward(
         self, channel_block: torch.Tensor, time_steps: torch.Tensor
@@ -69,6 +70,7 @@ class TimeEmbed(nn.Module):
         # apply channel-wise embedding
         embed = embed.view(embed.shape[0], embed.shape[1], 1, 1)
         embed = channel_block + embed
+        embed = self.gelu(embed)
         return embed
 
 
@@ -207,9 +209,7 @@ def train_mnist(log_wandb) -> None:
     ddpm.to(device)
     n_epoch = 100
 
-    tf = transforms.Compose(
-        [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
-    )
+    tf = transforms.ToTensor()
 
     dataset = MNIST(
         "./data",
