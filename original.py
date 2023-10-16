@@ -19,6 +19,7 @@ from torchvision.datasets import MNIST
 from torchvision import transforms
 from torchvision.utils import save_image, make_grid
 import wandb
+import argparse
 
 
 def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor]:
@@ -65,6 +66,7 @@ class TimeEmbed(nn.Module):
         self, channel_block: torch.Tensor, time_steps: torch.Tensor
     ) -> torch.Tensor:
         embed = self.model(time_steps)
+        # apply channel-wise embedding
         embed = embed.view(embed.shape[0], embed.shape[1], 1, 1)
         embed = channel_block + embed
         return embed
@@ -87,7 +89,8 @@ class Block(nn.Module):
                 scale_factor=2, mode="bilinear", align_corners=True
             )
         self.gelu = nn.GELU()
-        self.batchnorm = nn.BatchNorm2d(out_ch)
+        self.batchnorm1 = nn.BatchNorm2d(out_ch)
+        self.batchnorm2 = nn.BatchNorm2d(out_ch)
 
     def forward(self, x: torch.Tensor, time_steps: torch.Tensor = None) -> torch.Tensor:
         if self.up_or_down == "down":
@@ -95,10 +98,11 @@ class Block(nn.Module):
 
         x = self.timeEmbed(x, time_steps)
         x = self.conv1(x)
+        x = self.batchnorm1(x)
         x = self.gelu(x)
         x = self.conv2(x)
+        x = self.batchnorm2(x)
         x = self.gelu(x)
-        x = self.batchnorm(x)
 
         if self.up_or_down == "up":
             x = self.upsample(x)
@@ -184,15 +188,24 @@ class DDPM(nn.Module):
         return x_i
 
 
-def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
-    wandb.login()
-    wandb.init(project="atia-project", config={}, tags=["mnist"])
+def train_mnist(log_wandb) -> None:
+    if log_wandb:
+        wandb.login()
+        wandb.init(project="atia-project", config={}, tags=["mnist"])
+    device = torch.device(
+        "cuda:0"
+        if torch.cuda.is_available()
+        else "mps"
+        if torch.backends.mps.is_available()
+        else "cpu"
+    )
     ddpm = DDPM(
         eps_model=UNet(input_channels=1, output_channels=1),
         betas=(1e-4, 0.02),
         n_T=1000,
     )
     ddpm.to(device)
+    n_epoch = 100
 
     tf = transforms.Compose(
         [transforms.ToTensor(), transforms.Normalize((0.5,), (1.0))]
@@ -204,8 +217,8 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
         download=True,
         transform=tf,
     )
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=20)
-    optim = torch.optim.Adam(ddpm.parameters(), lr=5e-3)
+    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=2)
+    optim = torch.optim.Adam(ddpm.parameters(), lr=2e-3)
 
     for i in range(n_epoch):
         ddpm.train()
@@ -234,15 +247,19 @@ def train_mnist(n_epoch: int = 100, device="cuda:0") -> None:
             model_path = f"ddpm_mnist.pth"
             save_image(grid, image_path)
             torch.save(ddpm.state_dict(), model_path)
-            wandb.log(
-                {
-                    "epoch": i + 1,
-                    "loss": avg_loss,
-                    f"sample": wandb.Image(image_path),
-                }
-            )
-            wandb.save(model_path)
+            if log_wandb:
+                wandb.log(
+                    {
+                        "epoch": i + 1,
+                        "loss": avg_loss,
+                        f"sample": wandb.Image(image_path),
+                    }
+                )
+                wandb.save(model_path)
 
 
 if __name__ == "__main__":
-    train_mnist()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--log_wandb", action="store_true")
+    args = parser.parse_args()
+    train_mnist(args.log_wandb)
