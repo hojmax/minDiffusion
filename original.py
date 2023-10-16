@@ -29,7 +29,7 @@ def ddpm_schedules(beta1: float, beta2: float, T: int) -> Dict[str, torch.Tensor
     """
     assert beta1 < beta2 < 1.0, "beta1 and beta2 must be in (0, 1)"
 
-    beta_t = (beta2 - beta1) * torch.arange(0, T, dtype=torch.float32) / (T - 1) + beta1
+    beta_t = (beta2 - beta1) * torch.arange(0, T + 1, dtype=torch.float32) / T + beta1
     sqrt_beta_t = torch.sqrt(beta_t)
     alpha_t = 1 - beta_t
     log_alpha_t = torch.log(alpha_t)
@@ -81,7 +81,7 @@ class DDPM(nn.Module):
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
         """
-        time = torch.randint(0, self.n_T, (x.shape[0],)).to(
+        time = torch.randint(1, self.n_T, (x.shape[0],)).to(
             x.device
         )  # (zero indexed, so (0, n_T-1) equal to (1, n_T) in the paper)
         eps = torch.randn_like(x)  # eps ~ N(0, 1)
@@ -103,8 +103,8 @@ class DDPM(nn.Module):
         if self.should_save_pngs:
             reverse.append(x_i)
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
-        for i in range(self.n_T - 1, -1, -1):
-            z = torch.randn(n_sample, *size).to(device) if i > 0 else 0
+        for i in range(self.n_T - 1, 0, -1):
+            z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
             time = (torch.ones(n_sample) * i).to(device)
             eps = self.eps_model(x_i, time)
             x_i = (
@@ -130,7 +130,7 @@ class DDPM(nn.Module):
 
             predictions2 = []
             forward = []
-            for t in range(self.n_T, 0, -1):
+            for t in range(self.n_T - 1, 0, -1):
                 eps = torch.randn_like(real_x)
                 time = (torch.ones(n_sample) * t).long().to(device)
                 forward.append(
