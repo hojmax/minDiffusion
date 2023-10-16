@@ -110,7 +110,7 @@ def train_mnist(log_wandb) -> None:
         "resolution": 28,
         "in_channels": 1,
         "out_ch": 1,
-        "ch": 16,
+        "ch": 32,
         "ch_mult": (
             1,
             2,
