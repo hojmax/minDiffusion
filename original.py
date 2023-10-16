@@ -115,7 +115,7 @@ class Block(nn.Module):
 class UNet(nn.Module):
     def __init__(self, input_channels: int, output_channels: int) -> None:
         super(UNet, self).__init__()
-        n = 128
+        n = 16
         self.input1 = Block(input_channels, n, "same")
         self.encoder2 = Block(n, 2 * n, "down")
         self.encoder3 = Block(2 * n, 4 * n, "down")
@@ -155,7 +155,7 @@ class DDPM(nn.Module):
         self.n_T = n_T
         self.criterion = criterion
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, prediction_index=False) -> torch.Tensor:
         """
         Makes forward diffusion x_t, and tries to guess epsilon value from x_t using eps_model.
         This implements Algorithm 1 in the paper.
@@ -171,8 +171,28 @@ class DDPM(nn.Module):
             + self.sqrtmab[_ts, None, None, None] * eps
         )  # This is the x_t, which is sqrt(alphabar) x_0 + sqrt(1-alphabar) * eps
         # We should predict the "error term" from this x_t. Loss is what we return.
+        pred = self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T)
 
-        return self.criterion(eps, self.eps_model(x_t, _ts.unsqueeze(1) / self.n_T))
+        if prediction_index:
+            x_t_img = make_image_row(x_t)
+            reconstructed = (
+                x_t
+                - pred
+                * self.sqrtmab[_ts, None, None, None]
+                / self.sqrtab[_ts, None, None, None]
+            )
+            pred_comb_img = make_image_row(
+                torch.clip(
+                    reconstructed,
+                    0,
+                    1,
+                )
+            )
+            pred_img = make_image_row(pred)
+            all = torch.cat([x_t_img, pred_comb_img, pred_img], dim=2)
+            save_image(all, f"images/ddpm{prediction_index}.png")
+
+        return self.criterion(eps, pred)
 
     def sample(self, n_sample: int, size, device) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
@@ -188,6 +208,15 @@ class DDPM(nn.Module):
             )
 
         return x_i
+
+
+def make_image_row(x: torch.Tensor):
+    """
+    Take tensor (B x C x H x W)
+    And outputs a tensor (1 x C x H x W*B)
+    Where each of the H x W images are placed side by side
+    """
+    return torch.cat(torch.split(x, 1, dim=0), dim=3)
 
 
 def train_mnist(log_wandb) -> None:
@@ -229,7 +258,10 @@ def train_mnist(log_wandb) -> None:
         for x, _ in pbar:
             optim.zero_grad()
             x = x.to(device)
-            loss = ddpm(x)
+            if total_loss == 0:
+                loss = ddpm(x, i + 1)
+            else:
+                loss = ddpm(x)
             loss.backward()
             total_loss += loss.item()
             if loss_ema is None:
@@ -243,8 +275,8 @@ def train_mnist(log_wandb) -> None:
         with torch.no_grad():
             xh = ddpm.sample(16, (1, 28, 28), device)
             grid = make_grid(xh, nrow=4)
-            image_path = f"ddpm_sample_{i}.png"
-            model_path = f"ddpm_mnist.pth"
+            image_path = f"images/ddpm_sample_{i}.png"
+            model_path = f"images/ddpm_mnist.pth"
             save_image(grid, image_path)
             torch.save(ddpm.state_dict(), model_path)
             if log_wandb:
