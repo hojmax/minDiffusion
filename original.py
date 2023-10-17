@@ -154,6 +154,7 @@ class DDPM(nn.Module):
 
         self.n_T = n_T
         self.criterion = criterion
+        self.test_x = None
 
     def forward(self, x: torch.Tensor, prediction_index=False) -> torch.Tensor:
         """
@@ -161,7 +162,7 @@ class DDPM(nn.Module):
         This implements Algorithm 1 in the paper.
         """
 
-        _ts = torch.randint(1, self.n_T, (x.shape[0],)).to(
+        _ts = torch.randint(1, self.n_T + 1, (x.shape[0],)).to(
             x.device
         )  # t ~ Uniform(0, n_T)
         eps = torch.randn_like(x)  # eps ~ N(0, 1)
@@ -176,11 +177,8 @@ class DDPM(nn.Module):
         if prediction_index:
             x_t_img = make_image_row(x_t)
             reconstructed = (
-                x_t
-                - pred
-                * self.sqrtmab[_ts, None, None, None]
-                / self.sqrtab[_ts, None, None, None]
-            )
+                x_t - pred * self.sqrtmab[_ts, None, None, None]
+            ) / self.sqrtab[_ts, None, None, None]
             pred_comb_img = make_image_row(
                 torch.clip(
                     reconstructed,
@@ -194,11 +192,13 @@ class DDPM(nn.Module):
 
         return self.criterion(eps, pred)
 
-    def sample(self, n_sample: int, size, device) -> torch.Tensor:
+    def sample(self, n_sample: int, size, device, epoch) -> torch.Tensor:
         x_i = torch.randn(n_sample, *size).to(device)  # x_T ~ N(0, 1)
+        reverse = []
 
         # This samples accordingly to Algorithm 2. It is exactly the same logic.
         for i in range(self.n_T, 0, -1):
+            reverse.append(x_i)
             z = torch.randn(n_sample, *size).to(device) if i > 1 else 0
             time = torch.tensor([[i / self.n_T]]).to(device)
             eps = self.eps_model(x_i, time)
@@ -206,6 +206,24 @@ class DDPM(nn.Module):
                 self.oneover_sqrta[i] * (x_i - eps * self.mab_over_sqrtmab[i])
                 + self.sqrt_beta_t[i] * z
             )
+        reverse.append(x_i)
+
+        test_x = self.test_x[:n_sample]
+        forward = []
+        for i in range(self.n_T, 0, -1):
+            _ts = torch.tensor([i]).repeat(n_sample).to(device)
+            noise = torch.randn_like(test_x)
+            x_t = (
+                self.sqrtab[_ts, None, None, None] * test_x
+                + self.sqrtmab[_ts, None, None, None] * noise
+            )
+            forward.append(x_t)
+        forward.append(test_x)
+
+        reverse_img = torch.cat([make_image_row(x_i) for x_i in reverse], dim=2)
+        forward_img = torch.cat([make_image_row(x_i) for x_i in forward], dim=2)
+        combined = torch.cat([reverse_img, forward_img], dim=3)
+        save_image(combined, f"images/reverse_forward{epoch}.png")
 
         return x_i
 
@@ -232,9 +250,11 @@ def train_mnist(log_wandb) -> None:
     )
     ddpm = DDPM(
         eps_model=UNet(input_channels=1, output_channels=1),
-        betas=(1e-4, 0.02),
-        n_T=1000,
+        betas=(1e-5, 0.03),
+        n_T=100,
     )
+    # load parameters
+    ddpm.load_state_dict(torch.load("models/ddpm_mnist_pre.pth"))
     ddpm.to(device)
     n_epoch = 100
 
@@ -258,6 +278,7 @@ def train_mnist(log_wandb) -> None:
         for x, _ in pbar:
             optim.zero_grad()
             x = x.to(device)
+            ddpm.test_x = x
             if total_loss == 0:
                 loss = ddpm(x, i + 1)
             else:
@@ -273,10 +294,10 @@ def train_mnist(log_wandb) -> None:
         avg_loss = total_loss / len(dataloader)
         ddpm.eval()
         with torch.no_grad():
-            xh = ddpm.sample(16, (1, 28, 28), device)
-            grid = make_grid(xh, nrow=4)
+            xh = ddpm.sample(4, (1, 28, 28), device, i)
+            grid = make_grid(xh, nrow=2)
             image_path = f"images/ddpm_sample_{i}.png"
-            model_path = f"images/ddpm_mnist.pth"
+            model_path = f"models/ddpm_mnist{i}.pth"
             save_image(grid, image_path)
             torch.save(ddpm.state_dict(), model_path)
             if log_wandb:
