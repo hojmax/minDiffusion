@@ -102,6 +102,7 @@ class DDPM(nn.Module):
                 + self.sqrt_beta_t[i] * z
             )
 
+        x_i = torch.clamp(x_i, 0, 1)
         return x_i
 
 
@@ -110,18 +111,26 @@ def train_mnist(log_wandb) -> None:
         "resolution": 28,
         "in_channels": 1,
         "out_ch": 1,
-        "ch": 128,
+        "ch": 256,
         "ch_mult": (
             1,
             2,
         ),
-        "num_res_blocks": 2,
+        "num_res_blocks": 3,
         "attn_resolutions": (14,),
         "dropout": 0.1,
     }
+    config = {
+        **model_config,
+        "betas": (1e-4, 0.02),
+        "n_T": 1000,
+        "n_epoch": 100,
+        "lr": 2e-3,
+        "batch_size": 128,
+    }
     if log_wandb:
         wandb.login()
-        wandb.init(project="atia-project", config={}, tags=["mnist"])
+        wandb.init(project="atia-project", config=config)
     device = torch.device(
         "cuda:0"
         if torch.cuda.is_available()
@@ -131,11 +140,10 @@ def train_mnist(log_wandb) -> None:
     )
     ddpm = DDPM(
         eps_model=Model(**model_config),
-        betas=(1e-4, 0.02),
-        n_T=1000,
+        betas=config["betas"],
+        n_T=config["n_T"],
     )
     ddpm.to(device)
-    n_epoch = 100
 
     tf = transforms.ToTensor()
 
@@ -145,10 +153,12 @@ def train_mnist(log_wandb) -> None:
         download=True,
         transform=tf,
     )
-    dataloader = DataLoader(dataset, batch_size=128, shuffle=True, num_workers=2)
-    optim = torch.optim.Adam(ddpm.parameters(), lr=2e-3)
+    dataloader = DataLoader(
+        dataset, batch_size=config["batch_size"], shuffle=True, num_workers=2
+    )
+    optim = torch.optim.Adam(ddpm.parameters(), lr=config["lr"])
 
-    for i in range(n_epoch):
+    for i in range(config["n_epoch"]):
         ddpm.train()
 
         pbar = tqdm(dataloader)
