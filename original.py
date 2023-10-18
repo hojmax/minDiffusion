@@ -284,7 +284,6 @@ def train_mnist(log_wandb) -> None:
             optim.zero_grad()
             x = x.to(device)
             ddpm.test_x = x
-            continue
             if total_loss == 0:
                 loss = ddpm(x, i + 1)
             else:
