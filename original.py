@@ -111,7 +111,7 @@ def train_mnist(log_wandb) -> None:
         "resolution": 28,
         "in_channels": 1,
         "out_ch": 1,
-        "ch": 256,
+        "ch": 128,
         "ch_mult": (
             1,
             2,
@@ -182,7 +182,7 @@ def train_mnist(log_wandb) -> None:
             xh = ddpm.sample(16, (1, 28, 28), device)
             grid = make_grid(xh, nrow=4)
             image_path = f"ddpm_sample_{i}.png"
-            model_path = f"ddpm_mnist.pth"
+            model_path = f"ddpm_mnist_{i}.pth"
             save_image(grid, image_path)
             torch.save(ddpm.state_dict(), model_path)
             if log_wandb:
